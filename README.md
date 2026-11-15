@@ -13,6 +13,7 @@ GitHub Actions workflow builds the APK for you.
 - Your land is your safe place. Leave it and you draw a trail; loop back home and everything inside the loop becomes yours.
 - Crossing another player's trail takes them out. Crossing your own trail takes you out. Bumping head-on takes out whoever is not standing on their own land (both, if neither is).
 - Friendly power-ups appear on the island and fade after a while. Only you can pick them up: **Zoom** (a speed boost), **Bubble** (a safe bubble) and **Freeze** (slows every pal down).
+- Coins are earned by playing (land, tags, loops, stars and power-ups) and spent in the **dress-up shop** on hats, trail styles and island looks (snow, candy, space). Every item has a fixed, visible price. There is no real money, no timers and no random items.
 - Easy mode gives a bouncy island edge and a few seconds of protection at the start. Earn stars for owning more of the island, tagging pals, playing for two minutes and drawing loops.
 
 ## Install on a Fire tablet
@@ -36,7 +37,7 @@ locks for a minute after three wrong answers. Inside you can:
 | Break reminder | After 15, 30 (default) or 45 minutes of actual play (menus, pauses, results and time in the background do not count) a "Time for a stretch!" screen appears between rounds. It is never shown in the middle of a round. |
 | Battery saver | Draws 30 frames per second instead of 60. Game speed does not change. |
 | Check for updates | The only feature that uses the internet. It runs only when you tap it. |
-| Reset | Clears stars and best score. |
+| Reset | Clears all progress: stars, best score, coins and everything in the shop. |
 
 ## Privacy and safety
 
