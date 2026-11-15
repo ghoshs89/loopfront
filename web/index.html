@@ -39,6 +39,9 @@
   #hudExtras { display: flex; gap: 8px; align-items: center; }
   #heartsPanel { padding: 3px 10px; border-width: 3px; border-radius: 18px; }
   #heartsPanel canvas { width: 66px; height: 16px; display: block; }
+  #powerPill { display: flex; align-items: center; gap: 8px; padding: 2px 12px; border-width: 3px; border-radius: 18px; font-size: 15px; }
+  #powerBarBox { width: 56px; height: 8px; border-radius: 4px; background: #e3e6ee; overflow: hidden; }
+  #powerBar { display: block; height: 100%; background: var(--sun); transition: width 0.25s linear; }
   #pauseBtn {
     pointer-events: auto; width: 62px; padding: 0; border-radius: 20px; background: var(--sun);
     border: 4px solid var(--ink); box-shadow: var(--shadow); display: flex; align-items: center; justify-content: center;
@@ -145,7 +148,7 @@
   .steps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0 14px; }
   .step { padding: 6px 6px 8px; border-radius: 16px; background: #f4fbff; border: 3px solid var(--ink); font-size: 17px; line-height: 1.15; }
   .step svg { width: 100%; height: 78px; display: block; }
-  .goals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0 12px; }
+  .goals { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin: 10px 0 12px; }
   .goal { padding: 6px 2px; border-radius: 14px; background: #f4fbff; border: 3px solid var(--ink); font-size: 14px; line-height: 1.1; }
   .goal canvas { width: 56px; height: 56px; display: block; margin: 0 auto 2px; }
 
@@ -218,6 +221,7 @@
       </div>
       <div id="hudExtras">
         <div id="heartsPanel" class="panel" aria-label="Hearts left"><canvas id="heartsCv" width="132" height="32"></canvas></div>
+        <div id="powerPill" class="panel hidden"><span id="powerName"></span><span id="powerBarBox"><i id="powerBar"></i></span></div>
       </div>
     </div>
     <div id="board" class="panel">
@@ -426,9 +430,9 @@ const FUN_NAMES = [
   'Cosmic Cookie', 'Jelly Bean', 'Ninja Noodle', 'Bubble Boss', 'Sparkle Pants'
 ];
 const DIFFICULTY = {
-  easy:   { bots: 6,  speed: 0.80, aggr: 0,   bounce: true,  shield: 5, hearts: 3, gentle: true },
-  normal: { bots: 8,  speed: 0.92, aggr: 0.6, bounce: false, shield: 3, hearts: 2, gentle: false },
-  hard:   { bots: 10, speed: 1.0,  aggr: 1,   bounce: false, shield: 0, hearts: 1, gentle: false }
+  easy:   { bots: 6,  speed: 0.80, aggr: 0,   bounce: true,  shield: 5, hearts: 3, gentle: true,  pickGap: [8, 14] },
+  normal: { bots: 8,  speed: 0.92, aggr: 0.6, bounce: false, shield: 3, hearts: 2, gentle: false, pickGap: [12, 20] },
+  hard:   { bots: 10, speed: 1.0,  aggr: 1,   bounce: false, shield: 0, hearts: 1, gentle: false, pickGap: [16, 26] }
 };
 const RANK_COLORS = ['#ffd23f', '#cfd8dc', '#e0a064'];
 
@@ -814,6 +818,13 @@ let pendingEnd = null;      // the player's first terminal event of the current 
 let diff = DIFFICULTY.easy;
 let hearts = 0;             // lives left in the current round (1 = the next mistake ends it)
 
+/* ---- power-ups: friendly pick-ups only the child can collect ---- */
+const POWERUPS = { zoom: { secs: 5 }, bubble: { secs: 6 }, freeze: { secs: 5 } };
+const POWER_TYPES = ['zoom', 'bubble', 'freeze'];
+const PICKUP_LIFE = 25, PICKUP_MAX = 3, PICKUP_R = 28;
+const pickups = [];
+let nextPickupAt = 0, zoomUntil = 0, bubbleUntil = 0, freezeUntil = 0, roundPower = 0;
+
 // Add the wall-clock time since the last stamp to playedSec. Safe to call any number of times:
 // it does nothing when no stamp is set, so duplicate pause/background notifications cannot double-count.
 function accountPlay(keepRunning) {
@@ -921,6 +932,8 @@ function startMatch(withPlayer) {
   bestPct = 0; roundLoops = 0; newStars.length = 0;
   pendingEnd = null; inStep = false;
   hearts = withPlayer ? diff.hearts : 0;
+  pickups.length = 0; zoomUntil = 0; bubbleUntil = 0; freezeUntil = 0; roundPower = 0;
+  nextPickupAt = simTime + rand(diff.pickGap[0], diff.pickGap[1]);
   spectate = null;
   if (player && player.alive) { cam.x = player.x; cam.y = player.y; }
   input.mode = 'none'; input.stickDown = false; input.heading = null; releaseKeys();
@@ -936,7 +949,8 @@ const SFX = {
   tag:     { type: 'square',   notes: [392, 523, 784], len: 0.08 },
   oops:    { type: 'sine',     notes: [392, 330, 262], len: 0.16 },
   star:    { type: 'triangle', notes: [784, 988, 1175, 1568], len: 0.08 },
-  bump:    { type: 'sine',     notes: [180], len: 0.10 }
+  bump:    { type: 'sine',     notes: [180], len: 0.10 },
+  power:   { type: 'triangle', notes: [523, 784, 1047], len: 0.07 }
 };
 function ensureAudio() {
   if (audioCtx) return;
@@ -1013,7 +1027,8 @@ const GOALS = [
   { id: 'tag1',       label: 'Tag a pal',     ok: () => player.kills >= 1 },
   { id: 'tag3',       label: 'Tag 3 pals',    ok: () => player.kills >= 3 },
   { id: 'survive120', label: 'Play 2 minutes', ok: () => simTime - player.bornAt >= 120 },
-  { id: 'loops10',    label: '10 loops',      ok: () => roundLoops >= 10 }
+  { id: 'loops10',    label: '10 loops',      ok: () => roundLoops >= 10 },
+  { id: 'power5',     label: '5 power-ups',   ok: () => roundPower >= 5 }
 ];
 
 // Awards any goals now reached. `silent` is the end-of-round pass: it works even though the player is
@@ -1429,6 +1444,45 @@ function bounceOffWall(e, dx, dy) {
   e.bumpAt = simTime;
 }
 
+function spawnPickup() {
+  for (let t = 0; t < 20; t++) {
+    const a = Math.random() * TAU, r = Math.sqrt(Math.random()) * (ARENA_R - 160);
+    const x = CENTER + Math.cos(a) * r, y = CENTER + Math.sin(a) * r;
+    if (t < 12 && player && player.alive && Math.hypot(x - player.x, y - player.y) > 1100) continue;   // prefer nearby
+    let ok = true;
+    for (const o of entities) if (o.alive && Math.hypot(o.x - x, o.y - y) < 250) { ok = false; break; }
+    if (!ok) continue;
+    pickups.push({ x, y, type: pick(POWER_TYPES), born: simTime });
+    return true;
+  }
+  return false;
+}
+
+function collectPickup(pu) {
+  roundPower++;
+  const secs = POWERUPS[pu.type].secs;
+  if (pu.type === 'zoom') { zoomUntil = simTime + secs; addFloat(pu.x, pu.y - 30, 'Zoom!', '#f77f00'); }
+  else if (pu.type === 'bubble') {
+    bubbleUntil = simTime + secs;
+    player.shieldUntil = Math.max(player.shieldUntil, simTime + secs);      // the same bubble as at the start of a round
+    addFloat(pu.x, pu.y - 30, 'Bubble!', '#118ab2');
+  } else { freezeUntil = simTime + secs; addFloat(pu.x, pu.y - 30, 'Freeze!', '#4361ee'); }
+  confetti(pu.x, pu.y, 12);
+  sfx('power');
+}
+
+function updatePickups() {
+  for (let i = pickups.length - 1; i >= 0; i--) {
+    const pu = pickups[i];
+    if (simTime - pu.born > PICKUP_LIFE) { pickups.splice(i, 1); continue; }
+    if (Math.hypot(player.x - pu.x, player.y - pu.y) < PICKUP_R) { pickups.splice(i, 1); collectPickup(pu); }
+  }
+  if (simTime >= nextPickupAt) {
+    if (pickups.length < PICKUP_MAX && spawnPickup()) nextPickupAt = simTime + rand(diff.pickGap[0], diff.pickGap[1]);
+    else nextPickupAt = simTime + 1;                                       // full or no room: look again in a second
+  }
+}
+
 // One simulation step. Removals and tag credits happen as they occur, but the player's result screen
 // is only built once the whole step (collisions, captures, wins) has been resolved.
 function step(h) {
@@ -1456,8 +1510,10 @@ function stepCore(h) {
       e.angle += clamp(angDiff(e.angle, e.targetAngle), -TURN_BOT * h, TURN_BOT * h);
     }
     e.px = e.x; e.py = e.y;
-    e.x += Math.cos(e.angle) * e.speed * h;
-    e.y += Math.sin(e.angle) * e.speed * h;
+    // Zoom speeds the player up; Freeze slows every pal down
+    const sp = e.isPlayer ? (simTime < zoomUntil ? e.speed * 1.35 : e.speed) : (simTime < freezeUntil ? e.speed * 0.45 : e.speed);
+    e.x += Math.cos(e.angle) * sp * h;
+    e.y += Math.sin(e.angle) * sp * h;
     const cx = clamp((e.x / CELL) | 0, 0, N - 1), cy = clamp((e.y / CELL) | 0, 0, N - 1);
     e.inOwn = owner[cy * N + cx] === e.id;
   }
@@ -1516,6 +1572,7 @@ function stepCore(h) {
   if (mode === 'playing' && player && player.alive) {
     const p = pctOf(player);
     noteBest(p);
+    updatePickups();
     checkStars(false);
     if (counts[player.id] >= arenaCells * 0.999 && !pendingEnd) pendingEnd = { pct: p, killer: null, cause: 'win' };
   }
@@ -1744,6 +1801,32 @@ function render(now) {
   }
   ctx.globalAlpha = 1;
 
+  // power-ups
+  for (const pu of pickups) {
+    if (pu.x < vx0 - 40 || pu.x > vx1 + 40 || pu.y < vy0 - 40 || pu.y > vy1 + 40) continue;
+    if (PICKUP_LIFE - (simTime - pu.born) < 4 && Math.floor(now / 150) % 2 === 0) continue;   // blink before fading away
+    const by = pu.y + Math.sin(now / 280 + pu.born) * 3;
+    ctx.beginPath(); ctx.ellipse(pu.x, pu.y + 16, 12, 5, 0, 0, TAU); ctx.fillStyle = 'rgba(43,45,66,0.2)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(pu.x, by, 17, 0, TAU); ctx.fillStyle = '#ffffff'; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.stroke();
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    if (pu.type === 'zoom') {
+      const b = [3, -11, -6, 2, -1, 2, -3, 11, 7, -3, 2, -3];
+      ctx.beginPath(); ctx.moveTo(pu.x + b[0], by + b[1]);
+      for (let i = 2; i < b.length; i += 2) ctx.lineTo(pu.x + b[i], by + b[i + 1]);
+      ctx.closePath(); ctx.fillStyle = '#ffd23f'; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = INK; ctx.stroke();
+    } else if (pu.type === 'bubble') {
+      ctx.beginPath(); ctx.arc(pu.x, by, 8, 0, TAU); ctx.lineWidth = 3; ctx.strokeStyle = '#4cc9f0'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(pu.x, by, 8, -2.5, -1.4); ctx.lineWidth = 2; ctx.strokeStyle = '#ffffff'; ctx.stroke();
+    } else {
+      ctx.lineWidth = 2.5; ctx.strokeStyle = '#118ab2';
+      for (let k = 0; k < 3; k++) {
+        const a = k * Math.PI / 3, c = Math.cos(a) * 9, sn = Math.sin(a) * 9;
+        ctx.beginPath(); ctx.moveTo(pu.x - c, by - sn); ctx.lineTo(pu.x + c, by + sn); ctx.stroke();
+      }
+    }
+  }
+
   // creatures + name labels
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
@@ -1773,6 +1856,10 @@ function render(now) {
         ctx.strokeStyle = '#ffffff';
         ctx.stroke();
       }
+    }
+    if (!e.isPlayer && simTime < freezeUntil) {   // frozen pals get a pale blue ring
+      ctx.beginPath(); ctx.arc(e.x, e.y, cr + 6, 0, TAU);
+      ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(76,201,240,0.75)'; ctx.stroke();
     }
     const mood = (simTime < e.wowUntil || trailLen(e) > 600) ? 'wow' : 'happy';
     drawCreature(ctx, e.x, e.y, cr, e.character, e.hex, e.angle, mood, false);
@@ -1856,6 +1943,12 @@ function drawMinimap() {
     m.strokeStyle = INK;
     m.stroke();
   }
+  for (const pu of pickups) {
+    m.beginPath();
+    m.arc(pu.x * k, pu.y * k, 3.5 * dpr, 0, TAU);
+    m.fillStyle = '#ffffff'; m.fill();
+    m.strokeStyle = INK; m.stroke();
+  }
   if (player && player.alive) {
     m.beginPath();
     m.arc(player.x * k, player.y * k, 4.5 * dpr, 0, TAU);
@@ -1936,6 +2029,23 @@ function updateHud() {
     }
     statKills.textContent = String(player.kills);
   }
+  updatePower();
+}
+
+// the pill under the counters shows whichever power-up has the most time left
+function updatePower() {
+  let best = null;
+  if (mode === 'playing' && player) {
+    for (const [name, until, secs] of [['Zoom', zoomUntil, 5], ['Bubble', bubbleUntil, 6], ['Freeze', freezeUntil, 5]]) {
+      const left = until - simTime;
+      if (left > 0 && (!best || left > best.left)) best = { name, left, secs };
+    }
+  }
+  toggleClass($('powerPill'), 'hidden', !best);
+  if (best) {
+    $('powerName').textContent = best.name;
+    $('powerBar').style.width = clamp(best.left / best.secs * 100, 0, 100) + '%';
+  }
 }
 
 /* =====================================================================
@@ -1980,6 +2090,10 @@ function frame(now) {
   const steps = Math.max(1, Math.ceil(dt / 0.02));
   const h = dt / steps;
   for (let i = 0; i < steps; i++) step(h);
+  if (mode === 'playing' && player && player.alive && simTime < zoomUntil && particles.length < 350) {
+    const zc = Math.cos(player.angle), zs = Math.sin(player.angle);
+    for (let i = 0; i < 2; i++) particles.push({ x: player.x - zc * 16 + rand(-4, 4), y: player.y - zs * 16 + rand(-4, 4), vx: -zc * 60, vy: -zs * 60, life: 0.35, max: 0.35, size: rand(4, 7), css: '#ffd23f', g: 0 });
+  }
 
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];

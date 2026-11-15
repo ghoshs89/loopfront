@@ -12,6 +12,7 @@ GitHub Actions workflow builds the APK for you.
 - Hold a finger (or the mouse) where you want to go, or switch to a joystick on the start screen (drag anywhere; the character stays visible). On a keyboard, W A S D or the arrow keys point you toward that side of the screen.
 - Your land is your safe place. Leave it and you draw a trail; loop back home and everything inside the loop becomes yours.
 - Crossing another player's trail takes them out. Crossing your own trail takes you out. Bumping head-on takes out whoever is not standing on their own land (both, if neither is).
+- Friendly power-ups appear on the island and fade after a while. Only you can pick them up: **Zoom** (a speed boost), **Bubble** (a safe bubble) and **Freeze** (slows every pal down).
 - Easy mode gives a bouncy island edge and a few seconds of protection at the start. Earn stars for owning more of the island, tagging pals, playing for two minutes and drawing loops.
 
 ## Install on a Fire tablet

@@ -19,6 +19,9 @@ for (const [w, h] of SIZES) {
     // worst-case content: widest names and counters, measured in the same synchronous step
     const m = await page.evaluate(({ w }) => {
       const set = (sel, text) => document.querySelectorAll(sel).forEach((el) => { el.textContent = text; });
+      const pill = document.getElementById('powerPill');       // worst case: a power-up is active
+      pill.classList.remove('hidden');
+      document.getElementById('powerName').textContent = 'Bubble';
       set('#boardList li .name', 'WWWWWWWWWWWWWW');
       set('#boardList li .pct', '100.00%');
       document.getElementById('statPct').textContent = '100.00%';
@@ -32,6 +35,7 @@ for (const [w, h] of SIZES) {
         stats: stats.map(box),
         statOverflow: stats.map((s) => [...s.querySelectorAll('.val, .lbl')].some((v) => v.scrollWidth > v.clientWidth + 1)),
         top: box(document.getElementById('hudTop')),
+        pill: box(pill),
         hearts: (() => { const el = document.getElementById('heartsPanel'); return el.offsetParent ? box(el) : null; })(),
         board: box(document.getElementById('board')),
         boardOverflow: [...document.querySelectorAll('#boardList li')].some((li) => li.scrollWidth > li.clientWidth + 1 && getComputedStyle(li).overflow === 'visible'),
@@ -40,7 +44,7 @@ for (const [w, h] of SIZES) {
     }, { w });
 
     expect(m.hearts).not.toBeNull();            // Easy is the default: hearts are shown
-    const parts = [m.pause, ...m.stats, m.hearts];
+    const parts = [m.pause, ...m.stats, m.hearts, m.pill];
     for (const p of parts) {
       expect(p.x).toBeGreaterThanOrEqual(0);
       expect(p.x + p.width).toBeLessThanOrEqual(m.vw + 0.5);
@@ -53,6 +57,7 @@ for (const [w, h] of SIZES) {
     for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) expect(overlap(parts[i], parts[j])).toBe(false);
 
     expect(m.hearts.y).toBeGreaterThanOrEqual(m.top.y + m.top.height);   // hearts sit under the counters
+    expect(m.pill.y).toBeGreaterThanOrEqual(m.top.y + m.top.height);     // and so does the power-up pill
     if (w <= 600) {
       // narrow: leaderboard sits under the counters, right-aligned, 8 px gap
       expect(m.board.y).toBeGreaterThanOrEqual(m.top.y + m.top.height + 6);
