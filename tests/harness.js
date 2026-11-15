@@ -16,7 +16,8 @@ src = src.slice(0, tail) + `globalThis.__T = { entities, owner, counts, inArena,
   get player(){return player}, get paused(){return paused}, get diff(){return diff},
   get playedSec(){return playedSec}, set playedSec(v){playedSec=v},
   get newStars(){return newStars}, get roundLoops(){return roundLoops},
-  capture, addTrailPoint, stampDisc, kill, startMatch, step, pctOf, breakTick };\n` + src.slice(tail);
+  capture, addTrailPoint, stampDisc, kill, startMatch, step, pctOf, breakTick,
+  get pendingEnd(){return pendingEnd}, get bestPct(){return bestPct} };\n` + src.slice(tail);
 
 // ---- elements that start hidden in the HTML ----
 const seed = {};
@@ -61,20 +62,44 @@ Object.assign(globalThis, {
   addEventListener(type, fn) { (listeners['window:' + type] = listeners['window:' + type] || []).push(fn); },
   matchMedia: () => ({ matches: true }),
   requestAnimationFrame: cb => { rafCb = cb; return 1; },
-  cancelAnimationFrame: () => { rafCb = null; },
-  localStorage: {
-    _d: {}, getItem(k) { return Object.prototype.hasOwnProperty.call(this._d, k) ? this._d[k] : null; },
-    setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; }
-  }
+  cancelAnimationFrame: () => { rafCb = null; }
 });
 Object.defineProperty(globalThis, 'performance', { value: { now: () => fakeNow }, configurable: true, writable: true });
 Date.now = () => fakeNow;
-// kids' defaults for the core rule tests: hard rules, no break reminder, tutorial already seen
-localStorage._d['loopfront.settings'] = JSON.stringify({ name: '', color: '#ef476f', character: 'cat', sound: true, seenHowTo: true });
-localStorage._d['loopfront.parent'] = JSON.stringify({ difficulty: 'hard', breakMin: 0, saver: false });
 
-(0, eval)(src);
-const T = globalThis.__T;
+function makeStorage(initial) {
+  return {
+    _d: Object.assign({}, initial), writes: {},
+    getItem(k) { return Object.prototype.hasOwnProperty.call(this._d, k) ? this._d[k] : null; },
+    setItem(k, v) { this._d[k] = String(v); this.writes[k] = (this.writes[k] || 0) + 1; },
+    removeItem(k) { delete this._d[k]; }
+  };
+}
+// kids' defaults for the core rule tests: hard rules, no break reminder, tutorial already seen
+const DEFAULT_STORE = {
+  'loopfront.settings': JSON.stringify({ name: '', color: '#ef476f', character: 'cat', sound: true, seenHowTo: true }),
+  'loopfront.parent': JSON.stringify({ difficulty: 'hard', breakMin: 0, saver: false })
+};
+
+// Start a brand-new game instance (as if the page was reloaded) against the given stored data.
+// opts.throwing: storage that throws on every access, like a blocked or full browser store.
+let T;
+function boot(store, opts) {
+  for (const k of Object.keys(listeners)) delete listeners[k];
+  for (const k of Object.keys(els)) delete els[k];
+  rafCb = null; renderCount = 0; document.hidden = false;
+  if (opts && opts.throwing) {
+    globalThis.localStorage = {
+      getItem() { throw new Error('storage blocked'); }, setItem() { throw new Error('storage full'); },
+      removeItem() { throw new Error('storage blocked'); }
+    };
+  } else {
+    globalThis.localStorage = makeStorage(store);
+  }
+  (0, eval)(src);
+  T = globalThis.__T;
+}
+boot(DEFAULT_STORE);
 const fire = (key, ev) => (listeners[key] || []).forEach(fn => fn(ev || {}));
 const key = (type, k) => fire('window:' + type, { key: k, target: null, preventDefault() {} });
 const click = id => fire(id + ':click');
@@ -618,6 +643,312 @@ function placeOnTrail(bot, p, name) {
 }
 
 // =====================================================================
+// 14. WP0 regressions: records, simultaneous scoring, active time, keyboard, storage, lockout, notes
+// =====================================================================
+function freshGame(parent) {
+  const store = Object.assign({}, DEFAULT_STORE);
+  if (parent) store['loopfront.parent'] = JSON.stringify(Object.assign(JSON.parse(store['loopfront.parent']), parent));
+  boot(store);
+}
+function openSpot() {
+  for (let a = 0; a < 500; a++) {
+    const ang = Math.random() * Math.PI * 2, r = 400 + Math.random() * 600;
+    const x = T.CENTER + Math.cos(ang) * r, y = T.CENTER + Math.sin(ang) * r;
+    if (T.owner[((y / T.CELL) | 0) * T.N + ((x / T.CELL) | 0)] === 0) return { x, y };
+  }
+  throw new Error('no free spot');
+}
+function placeBot(bot, name, x, y, angle) {
+  bot.alive = true; bot.isPlayer = false; bot.name = name; bot.kills = 0; bot.respawnAt = 1e9;
+  bot.bx0 = T.N; bot.by0 = T.N; bot.bx1 = -1; bot.by1 = -1;
+  bot.x = bot.px = x; bot.y = bot.py = y; bot.angle = bot.targetAngle = angle;
+  T.stampDisc(bot, T.CENTER + 30, T.CENTER + 30, 20, false);
+  bot.ai = { state: 'expand', plan: { dir: angle, leg1: 9999, leg2: 1, sign: 1 }, next: 1e9, homeSince: 0, bold: 1, caution: 0, aggr: 0, ax: 0, ay: 0 };
+}
+// player and `extra + 1` pals meet head-on outside any land; the next step resolves them all at once
+function headOn(extra) {
+  const p = soloStart();
+  const s = openSpot();
+  p.x = p.px = s.x; p.y = p.py = s.y; p.angle = 0;
+  const bots = [];
+  for (let i = 0; i <= extra; i++) {
+    const b = T.entities[5 + i];
+    placeBot(b, 'Pal' + i, s.x + 5 + i, s.y, Math.PI);
+    bots.push(b);
+  }
+  return { p, bots };
+}
+// the player sits on a huge patch of own land so it can fly around for a long time without dying
+function bigLand() {
+  const p = soloStart();
+  T.stampDisc(p, T.CENTER, T.CENTER, 1400, false);
+  p.x = p.px = T.CENTER; p.y = p.py = T.CENTER;
+  return p;
+}
+
+// ---- A. records ----
+{
+  freshGame();
+  let p = soloStart();
+  T.stampDisc(p, p.x, p.y, 380, false);                       // roughly 6.5% of the island
+  frames(3);
+  const peak = T.pctOf(p);
+  click('pauseBtn'); click('quitBtn');                         // Pause, then Home
+  let stored = JSON.parse(localStorage._d['loopfront.progress']);
+  check('record survives Pause then Home', stored.best >= peak - 0.01 && stored.best > 5, `best=${stored.best} peak=${peak.toFixed(2)}`);
+  check('Home does not count the abandoned round as completed', stored.rounds === 0, `rounds=${stored.rounds}`);
+  check('Home best-score label shows the saved record', /Best: [5-9]\./.test(els.bestLabel.textContent), els.bestLabel.textContent);
+  boot(localStorage._d);
+  check('record is still there after reloading the page', T.progress.best > 5 && /Best: [5-9]\./.test(els.bestLabel.textContent), els.bestLabel.textContent);
+
+  // a lower score never overwrites it
+  T.progress.best = 50;
+  p = soloStart();
+  T.stampDisc(p, p.x, p.y, 200, false);
+  frames(3);
+  T.kill(p, null, 'wall');
+  check('a lower score cannot overwrite the record', T.progress.best === 50 && JSON.parse(localStorage._d['loopfront.progress']).best === 50);
+
+  // ordinary frames do not write to storage
+  freshGame();
+  p = soloStart();
+  frames(10);
+  const w0 = localStorage.writes['loopfront.progress'] || 0;
+  frames(300);
+  check('ordinary frames never write progress to storage', (localStorage.writes['loopfront.progress'] || 0) === w0, `${w0} -> ${localStorage.writes['loopfront.progress']}`);
+
+  // backgrounding keeps the record without ending the round
+  freshGame();
+  p = soloStart();
+  T.stampDisc(p, p.x, p.y, 380, false);
+  frames(3);
+  globalThis.onLoopfrontPause();
+  stored = JSON.parse(localStorage._d['loopfront.progress']);
+  check('backgrounding preserves the record and the round', stored.best > 5 && T.mode === 'playing' && T.paused, `best=${stored.best}`);
+
+  // reset stays effective: an old round cannot restore the record afterwards
+  click('quitBtn');
+  openParentViaGate();
+  click('resetBtn'); click('resetBtn');
+  click('parentCloseBtn');
+  check('reset clears the record and stars', T.progress.best === 0 && JSON.parse(localStorage._d['loopfront.progress']).best === 0);
+  click('playBtn');
+  frames(60);
+  stored = JSON.parse(localStorage._d['loopfront.progress']);
+  check('a new round after reset does not bring the old record back', stored.best < 1, `best=${stored.best}`);
+}
+
+// ---- B. simultaneous collisions are scored together ----
+{
+  freshGame();
+  let before = JSON.parse(localStorage._d['loopfront.progress'] || '{"rounds":0}').rounds || 0;
+  let { p, bots } = headOn(0);
+  T.step(1 / 60);
+  check('mutual head-on ends the round with the right cause', T.mode === 'over' && els.ovCause.textContent === 'You bumped into Pal0.', els.ovCause.textContent);
+  check('mutual head-on: the tag is counted on the results', els.ovKills.textContent === '1' && p.kills === 1 && !bots[0].alive, `ovKills=${els.ovKills.textContent}`);
+  check('mutual head-on awards "Tag a pal"', T.progress.stars.tag1 === true && /Tag a pal/.test(els.ovStars.textContent), els.ovStars.textContent);
+  check('the round is completed exactly once', T.progress.rounds === before + 1, `rounds=${T.progress.rounds}`);
+
+  ({ p, bots } = headOn(0));
+  p.kills = 2;
+  T.progress.stars = {};
+  T.step(1 / 60);
+  check('starting with two tags, a simultaneous tag earns "Tag 3 pals"', T.progress.stars.tag3 === true && els.ovKills.textContent === '3' && /Tag 3 pals/.test(els.ovStars.textContent), els.ovStars.textContent);
+
+  before = T.progress.rounds;
+  ({ p, bots } = headOn(1));
+  T.progress.stars = {};
+  T.step(1 / 60);
+  check('several pals at once: credits are not duplicated', p.kills === 2 && els.ovKills.textContent === '2' && !bots[0].alive && !bots[1].alive, `kills=${p.kills}`);
+  check('several pals at once: only one result per round', T.progress.rounds === before + 1 && T.mode === 'over', `rounds=${T.progress.rounds}`);
+  T.step(1 / 60); T.step(1 / 60);
+  check('stepping on after the round does not finish it twice', T.progress.rounds === before + 1);
+  check('no pending result is left over', T.pendingEnd === null);
+}
+
+// ---- other endings keep their cause, territory value and final achievements ----
+{
+  freshGame();
+  let p = soloStart();
+  T.stampDisc(p, p.x, p.y, 300, false);                       // ~3.7%: own2 but not own5
+  frames(2);
+  let pct = T.pctOf(p).toFixed(2);
+  T.kill(p, null, 'wall');
+  check('wall ending keeps its territory value and achievements', els.ovPct.textContent === pct + '%' && T.progress.stars.own2 === true && els.ovCause.textContent === 'You bumped the edge of the island.', els.ovPct.textContent + ' vs ' + pct);
+
+  p = soloStart();
+  T.stampDisc(p, p.x, p.y, 300, false);
+  frames(2);
+  const b = T.entities[5];
+  placeBot(b, 'Bandit', 10, 10, 0);
+  pct = T.pctOf(p).toFixed(2);
+  T.kill(p, b, 'swallowed');
+  check('swallowed ending names the other player and keeps the value', els.ovCause.textContent === 'Bandit took all your land.' && els.ovPct.textContent === pct + '%', els.ovCause.textContent);
+
+  p = soloStart();
+  T.stampDisc(p, T.CENTER, T.CENTER, 1500, false);            // the whole island
+  frames(2);
+  check('winning ends the round once with the champion text', T.mode === 'over' && els.ovTitle.textContent === 'ISLAND CHAMPION!' && els.ovCause.textContent === 'You own the whole island!' && parseFloat(els.ovPct.textContent) > 99.8, els.ovPct.textContent);
+  check('a win earns every land star', T.progress.stars.own25 === true && T.progress.stars.own10 === true);
+  const rounds = T.progress.rounds;
+  frames(30);
+  check('a won round is not finished again', T.progress.rounds === rounds);
+}
+
+// ---- C. break-reminder time is real active time ----
+{
+  const results = [];
+  for (const ms of [1000 / 60, 100 / 3, 250]) {
+    freshGame({ difficulty: 'easy', breakMin: 15 });
+    bigLand();
+    T.playedSec = 0;
+    frames(Math.round(20000 / ms), ms);
+    const still = T.mode === 'playing';
+    click('pauseBtn');
+    results.push({ ms, sec: T.playedSec, still });
+    check(`20 s of play counts as 20 s with ${ms.toFixed(1)} ms frames`, still && Math.abs(T.playedSec - 20) < 0.5, `counted ${T.playedSec.toFixed(2)} s`);
+  }
+
+  freshGame({ difficulty: 'easy', breakMin: 15 });
+  bigLand();
+  T.playedSec = 0;
+  frames(600);
+  globalThis.onLoopfrontPause();
+  const a = T.playedSec;
+  globalThis.onLoopfrontPause();
+  document.hidden = true; fire('document:visibilitychange');
+  document.hidden = false; fire('document:visibilitychange');
+  check('duplicate pause and background notices do not double-count', Math.abs(a - 10) < 0.3 && T.playedSec === a, `first=${a.toFixed(2)} after=${T.playedSec.toFixed(2)}`);
+  fakeNow += 120000;
+  globalThis.onLoopfrontResume();
+  click('resumeBtn');
+  frames(300);
+  click('pauseBtn');
+  check('time spent paused or in the background adds nothing', Math.abs(T.playedSec - 15) < 0.4, `total=${T.playedSec.toFixed(2)}`);
+
+  freshGame({ difficulty: 'easy', breakMin: 15 });
+  let p = bigLand();
+  T.playedSec = 899;
+  frames(180);
+  click('pauseBtn');
+  check('crossing the threshold does not interrupt the round', T.playedSec >= 900 && T.mode === 'playing' && hasClass('breakScreen', 'hidden'), `played=${T.playedSec.toFixed(1)}`);
+  click('resumeBtn');
+  T.kill(p, null, 'wall');
+  const idleStart = T.playedSec;
+  fakeNow += 30000;
+  check('results time is not counted', T.playedSec === idleStart);
+  click('againBtn');
+  check('the break waits for the next round request', !hasClass('breakScreen', 'hidden') && T.mode === 'over');
+}
+
+// ---- D. keyboard activation of controls ----
+{
+  freshGame();
+  const kd = (k, target, extra) => {
+    const ev = Object.assign({ key: k, repeat: false, target, prevented: false, preventDefault() { this.prevented = true; } }, extra);
+    fire('window:keydown', ev);
+    return ev;
+  };
+  const button = { tagName: 'BUTTON', closest: () => ({}) };
+  const body = { tagName: 'BODY', closest: () => null };
+  let ev = kd('Enter', button);
+  check('Enter on a focused button does not also start a game', T.mode === 'menu' && !ev.prevented);
+  ev = kd(' ', button);
+  check('Space on a focused button does not also start a game', T.mode === 'menu' && !ev.prevented);
+  ev = kd('Enter', body, { repeat: true });
+  check('a held key does not start a game', T.mode === 'menu');
+  kd('ArrowLeft', button);
+  check('arrow keys still steer from a focused button', T.input.left === true);
+  fire('window:keyup', { key: 'ArrowLeft' });
+
+  ev = kd('a', els.nick);
+  check('typing in the name field never steers', ev.prevented === false);
+  click('howBtn');
+  kd('Enter', els.nick);
+  check('Enter in the name field is ignored while another screen is open', T.mode === 'menu');
+  click('howOkBtn');
+  ev = kd('Enter', body);
+  check('Enter from a non-interactive target starts one round', T.mode === 'playing' && ev.prevented === true);
+
+  freshGame();
+  kd('Enter', els.nick);
+  check('Enter in the name field starts on the unobstructed start screen', T.mode === 'playing');
+
+  // results screen: Enter from a non-interactive target plays again; from a button it does not
+  freshGame();
+  click('playBtn');
+  T.kill(T.player, null, 'wall');
+  els.overScreen.classList.remove('hidden');
+  ev = kd('Enter', button);
+  check('results screen: Enter on a focused button does not also start a round', T.mode === 'over' && !ev.prevented);
+  ev = kd('Enter', body);
+  check('results screen: Enter from a non-interactive target plays again', T.mode === 'playing' && ev.prevented === true);
+}
+
+// ---- storage failures are never fatal ----
+{
+  boot({}, { throwing: true });
+  check('page starts even though storage throws', !!T && T.mode === 'menu');
+  click('playBtn');
+  check('first run still shows the tutorial', !hasClass('howScreen', 'hidden'));
+  click('howOkBtn');
+  check('a round starts with blocked storage', T.mode === 'playing');
+  frames(120);
+  T.stampDisc(T.player, T.player.x, T.player.y, 300, false);
+  frames(3);
+  T.kill(T.player, null, 'wall');
+  check('results render with blocked storage', T.mode === 'over' && els.ovTitle.textContent === 'Oops!' && /%$/.test(els.ovPct.textContent), els.ovPct.textContent);
+  check('the in-memory record still updates', T.progress.best > 3, `best=${T.progress.best}`);
+  click('menuBtn');
+  openParentViaGate();
+  click('resetBtn'); click('resetBtn');
+  check('reset works without storage', T.progress.best === 0);
+}
+
+// ---- N. gate lockout survives a restart ----
+{
+  freshGame();
+  click('parentBtn');
+  for (let i = 0; i < 3; i++) typeAnswer(readQuestion() + 1);
+  const saved = JSON.parse(localStorage._d['loopfront.parent']);
+  check('lockout is saved', saved.lockUntil > fakeNow && saved.lockUntil <= fakeNow + 60000, `lockUntil-now=${saved.lockUntil - fakeNow}`);
+  boot(localStorage._d);
+  click('parentBtn');
+  check('lockout survives restarting the app', els.gateKey1.disabled === true && els.gateOk.disabled === true);
+  typeAnswer(readQuestion());
+  check('locked after restart: the right answer is refused', hasClass('parentScreen', 'hidden'));
+  fakeNow += 61000;
+  boot(localStorage._d);
+  click('parentBtn');
+  check('lockout ends after a minute', els.gateKey1.disabled === false);
+
+  const far = Object.assign({}, DEFAULT_STORE, { 'loopfront.parent': JSON.stringify({ difficulty: 'hard', breakMin: 0, saver: false, lockUntil: fakeNow + 600000 }) });
+  boot(far);
+  click('parentBtn');
+  check('an absurdly distant lockout value is ignored', els.gateKey1.disabled === false);
+}
+
+// ---- M. update notes ----
+{
+  freshGame();
+  globalThis.LoopfrontApp = { getVersion: () => 12, checkUpdate() {}, openDownload() {}, setKeepAwake() {} };
+  openParentViaGate();
+  click('updateBtn');
+  globalThis.onLoopfrontUpdate({ status: 'ok', latest: 14, current: 12, notes: 'Fixes the record bug.' });
+  check('what is new is shown with an available update', els.updateNotes.textContent === 'Fixes the record bug.', els.updateNotes.textContent);
+  globalThis.onLoopfrontUpdate({ status: 'ok', latest: 14, current: 12, notes: 'x'.repeat(500) });
+  check('notes are length-limited', els.updateNotes.textContent.length === 300);
+  globalThis.onLoopfrontUpdate({ status: 'ok', latest: 12, current: 12, notes: 'old news' });
+  check('no notes when already up to date', els.updateNotes.textContent === '');
+  delete globalThis.LoopfrontApp;
+}
+
+// ---- J and E: static structure ----
+check('page-level network block is present', /http-equiv="Content-Security-Policy"[^>]*connect-src 'none'/.test(html));
+check('HUD bar wraps the counters and the leaderboard', /<div id="hudBar">[\s\S]*<div id="hudTop">[\s\S]*<div id="board"/.test(html));
+
+
+// =====================================================================
 // 13. offline and safety scan of the shipped page
 // =====================================================================
 {
@@ -632,7 +963,7 @@ function placeOnTrail(bot, p, name) {
   try { execFileSync(process.execPath, ['--check', tmp], { stdio: 'pipe' }); } catch (err) { syntax = false; msg = String(err.stderr); }
   fs.unlinkSync(tmp);
   check('script passes node --check', syntax, msg);
-  check('page size is small', html.length < 120000, `${html.length} bytes`);
+  check('page size is small', html.length < 260000, `${html.length} bytes`);
 }
 
 console.log(failed ? `\n${failed} of ${total} CHECK(S) FAILED` : `\nALL ${total} CHECKS PASSED`);

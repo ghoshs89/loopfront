@@ -32,7 +32,7 @@ locks for a minute after three wrong answers. Inside you can:
 | Setting | What it does |
 |---|---|
 | Difficulty | Easy (default): 6 slower pals that never chase you, a bouncy island edge and 5 seconds of protection at the start. Normal and Hard bring more and faster pals that can chase. |
-| Break reminder | After 15, 30 (default) or 45 minutes of play a "Time for a stretch!" screen appears between rounds. It is never shown in the middle of a round. |
+| Break reminder | After 15, 30 (default) or 45 minutes of actual play (menus, pauses, results and time in the background do not count) a "Time for a stretch!" screen appears between rounds. It is never shown in the middle of a round. |
 | Battery saver | Draws 30 frames per second instead of 60. Game speed does not change. |
 | Check for updates | The only feature that uses the internet. It runs only when you tap it. |
 | Reset | Clears stars and best score. |
@@ -43,7 +43,8 @@ locks for a minute after three wrong answers. Inside you can:
 - Everything is bundled in the app and works with no internet connection.
 - The app can only show its own bundled page; any attempt to open another address is blocked.
 - The only permission is internet access, used by the parent-triggered update check.
-- Names, stars and settings stay on the tablet.
+- Names, stars, settings and the best score stay on the tablet. A new best score is saved the moment it is reached, even if a round is left early.
+- The page itself carries a Content-Security-Policy that blocks all network access from the game code.
 - The game loop stops when the app is in the background, paused, or sitting idle on a menu.
 
 ## Build
@@ -61,8 +62,17 @@ side of the screen).
 
 ## Tests
 
-`node tests/harness.js web/index.html` runs a headless simulation of the rules, steering, kid settings,
-grown-ups gate, break reminder, update panel, battery behaviour and offline/safety scan.
+Needs Node 24. The shipped game has no dependencies; the tooling below is development-only.
+
+```bash
+npm ci                       # locked dev dependencies (Playwright)
+npm run test:harness         # headless simulation: rules, steering, scoring, timing, storage, offline scan
+npx playwright install chromium
+npm run test:browser         # real-browser checks: keyboard, HUD layout at many sizes, touch, no network
+```
+
+CI runs both on every pull request and before every release. Browser and harness results are not a
+substitute for testing on the real Fire tablet.
 
 ## Project layout
 
@@ -70,8 +80,9 @@ grown-ups gate, break reminder, update panel, battery behaviour and offline/safe
 |---|---|
 | `web/index.html` | The whole game: one offline page, no libraries or assets. |
 | `android/` | Minimal Android app (a full-screen WebView) that bundles `web/` and talks to the page through a small bridge. |
-| `.github/workflows/build-apk.yml` | Builds, signs and publishes the APK. |
+| `.github/workflows/build-apk.yml` | Validates (web and Android), then signs and publishes the APK. |
 | `tests/harness.js` | Headless tests (needs Node). |
+| `tests/browser/` | Playwright browser tests (dev-only). |
 
 ## Keep the signing key safe
 

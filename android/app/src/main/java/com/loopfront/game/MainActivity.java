@@ -107,9 +107,17 @@ public class MainActivity extends Activity {
                 sb.append(line);
             }
             r.close();
-            String tag = new JSONObject(sb.toString()).optString("tag_name", "");
+            JSONObject release = new JSONObject(sb.toString());
+            String tag = release.optString("tag_name", "");
             int latest = Integer.parseInt(tag.replaceAll("[^0-9]", ""));
-            json = "{\"status\":\"ok\",\"latest\":" + latest + ",\"current\":" + BuildConfig.VERSION_CODE + "}";
+            // "what's new" for the parent: plain letters, digits and simple punctuation only, short
+            String notes = release.optString("body", "").replaceAll("\\s+", " ")
+                    .replaceAll("[^A-Za-z0-9 .,:;!?()\\-]", "").trim();
+            if (notes.length() > 300) {
+                notes = notes.substring(0, 300);
+            }
+            json = "{\"status\":\"ok\",\"latest\":" + latest + ",\"current\":" + BuildConfig.VERSION_CODE
+                    + ",\"notes\":" + JSONObject.quote(notes) + "}";
         } catch (Exception e) {
             json = "{\"status\":\"error\"}";
         } finally {

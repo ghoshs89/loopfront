@@ -1,0 +1,17 @@
+{
+  "name": "loopfront-dev-tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Development-only test tooling. The shipped game (web/index.html) has no dependencies.",
+  "scripts": {
+    "test": "node tests/harness.js web/index.html && playwright test",
+    "test:harness": "node tests/harness.js web/index.html",
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
