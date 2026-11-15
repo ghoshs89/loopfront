@@ -120,6 +120,25 @@ for (const [w, h] of [[320, 568], [360, 640], [800, 480], [1280, 800]]) {
     await expect(page.locator('#shopScreen')).toBeHidden();
   });
 
+  test(`start screen: the daily mission card is short, readable and inside the screen at ${w} x ${h}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    await seen(page);
+    await open(page);
+    const card = page.locator('#missionCard');
+    await expect(card).toBeVisible();
+    const text = (await page.locator('#missionText').textContent()) || '';
+    expect(text.trim().split(/\s+/).length).toBeLessThanOrEqual(5);
+    const m = await page.evaluate(() => {
+      const r = document.getElementById('missionCard').getBoundingClientRect();
+      const t = document.getElementById('missionText');
+      return { x: r.x, width: r.width, vw: document.documentElement.clientWidth, clipped: t.scrollWidth > t.clientWidth + 1, docOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth };
+    });
+    expect(m.x).toBeGreaterThanOrEqual(0);
+    expect(m.x + m.width).toBeLessThanOrEqual(m.vw + 0.5);
+    expect(m.docOverflow).toBe(false);
+    expect(m.clipped).toBe(false);
+  });
+
   test(`start screen: corner labels and buttons do not overlap at ${w} x ${h}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h });
     await seen(page);

@@ -21,7 +21,7 @@ src = src.slice(0, tail) + `globalThis.__T = { entities, owner, counts, inArena,
   get hearts(){return hearts}, set hearts(v){hearts=v},
   pickups, get nextPickupAt(){return nextPickupAt}, get zoomUntil(){return zoomUntil}, get bubbleUntil(){return bubbleUntil},
   get freezeUntil(){return freezeUntil}, get roundPower(){return roundPower},
-  set roundLoops(v){roundLoops=v}, set roundPower(v){roundPower=v} };\n` + src.slice(tail);
+  set roundLoops(v){roundLoops=v}, set roundPower(v){roundPower=v}, MISSIONS, dayKey, missionFor };\n` + src.slice(tail);
 
 // ---- elements that start hidden in the HTML ----
 const seed = {};
@@ -1332,6 +1332,140 @@ function bigLand() {
   const money = /\$|\bpay\b|\bpaid\b|purchas|real money|credit card|subscri/i;
   check('no wording that suggests real money', !lits2.some(l => money.test(l)) && !money.test(body2), lits2.filter(l => money.test(l)).join(' | '));
   check('the shop screen exists and starts hidden', /<div id="shopScreen" class="overlay hidden">/.test(html));
+}
+
+
+// =====================================================================
+// 18. WP4: daily mission and streak
+// =====================================================================
+{
+  const BASE = 20000;                                           // 20000 % 8 === 0, so BASE + i is mission i
+  const offsetMs = new Date(0).getTimezoneOffset() * 60000;
+  const atDay = (d, extra) => { fakeNow = d * 86400000 + offsetMs + 43200000 + (extra || 0); };
+  const gameAt = (d, parent) => { atDay(d); freshGame(parent || { difficulty: 'hard', breakMin: 0 }); };
+  const stored = () => JSON.parse(localStorage._d['loopfront.progress']);
+  const loopAt = (pl, cx, cy, size) => {
+    const h = size / 2, pts = [[cx - h, cy - h], [cx + h, cy - h], [cx + h, cy + h], [cx - h, cy + h], [cx - h, cy - h]];
+    let [lx, ly] = pts[0];
+    T.addTrailPoint(pl, lx, ly);
+    for (let k = 1; k < pts.length; k++) {
+      const [x, y] = pts[k]; const n = Math.ceil(Math.hypot(x - lx, y - ly) / 6);
+      for (let q = 1; q <= n; q++) T.addTrailPoint(pl, lx + (x - lx) * q / n, ly + (y - ly) * q / n);
+      lx = x; ly = y;
+    }
+    pl.x = pl.px = lx; pl.y = pl.py = ly;
+    T.capture(pl);
+  };
+  const doers = {
+    loops5() { const p = soloStart(); for (let k = 0; k < 5; k++) loopAt(p, T.CENTER - 400 + k * 200, T.CENTER - 300, 120); },
+    own4() { const p = soloStart(); T.stampDisc(p, T.CENTER, T.CENTER, 330, false); frames(2); },
+    tag2() { const p = soloStart(); for (let k = 0; k < 2; k++) { const b = T.entities[5 + k]; placeBot(b, 'T' + k, T.CENTER + 100 * k, T.CENTER + 400, 0); T.kill(b, p, 'trail'); } },
+    play90() { const p = bigLand(); p.speed = 0; frames(60 * 95); },
+    power3() { const p = soloStart(); for (let k = 0; k < 3; k++) { T.pickups.length = 0; T.pickups.push({ x: p.x, y: p.y, type: 'zoom', born: T.simTime }); T.step(1 / 60); } },
+    clean2() { const p = soloStart(); T.stampDisc(p, T.CENTER, T.CENTER, 250, false); frames(2); },
+    bigloop1() { const p = soloStart(); loopAt(p, T.CENTER, T.CENTER - 300, 300); },
+    rounds3() { for (let k = 0; k < 3; k++) { const p = soloStart(); T.kill(p, null, 'wall'); } }
+  };
+
+  // ---- selection ----
+  check('eight missions, each at most five words, all with unique ids', T.MISSIONS.length === 8 && new Set(T.MISSIONS.map(m => m.id)).size === 8 && T.MISSIONS.every(m => m.text.split(/\s+/).length <= 5), T.MISSIONS.map(m => m.text.split(/\s+/).length).join(','));
+  const seenTexts = [];
+  for (let i = 0; i < 8; i++) { gameAt(BASE + i); seenTexts.push(els.missionText.textContent); }
+  check('each day of the week shows a different mission', new Set(seenTexts).size === 8 && seenTexts.every((t, i) => t === T.MISSIONS[i].text), seenTexts.join(' | '));
+  gameAt(BASE + 3);
+  const first = els.missionText.textContent;
+  atDay(BASE + 3, 5 * 3600000);
+  boot(localStorage._d);
+  check('the mission stays the same all day', els.missionText.textContent === first);
+  atDay(BASE + 4);
+  boot(localStorage._d);
+  check('the next day brings the next mission', els.missionText.textContent === T.MISSIONS[4].text && els.missionText.textContent !== first);
+  check('the card starts empty and is not marked done', els.missionBar.style.width === '0%' && !hasClass('missionCard', 'done'));
+
+  // ---- every mission completes through real play ----
+  T.MISSIONS.forEach((ms, i) => {
+    gameAt(BASE + i);
+    const coins0 = T.progress.coins;
+    doers[ms.id]();
+    check(`mission "${ms.text}" completes through play`, T.progress.mission.done === true && T.progress.mission.day === BASE + i, `count=${T.progress.mission.count}`);
+    check(`"${ms.text}": 50 coins paid once and the streak starts`, T.progress.coins - coins0 >= 50 && T.progress.missionsDone === 1 && T.progress.streak === 1 && T.progress.lastDoneDay === BASE + i, `coins +${T.progress.coins - coins0}`);
+  });
+
+  // ---- other work does not count ----
+  gameAt(BASE + 0);
+  doers.own4();
+  check('work for another mission does not count', T.progress.mission.count === 0 && !T.progress.mission.done);
+  gameAt(BASE + 1);
+  { const p = soloStart(); T.stampDisc(p, T.CENTER, T.CENTER, 250, false); frames(2); }
+  check('a 2.8% round does not finish "own 4%", but shows progress', !T.progress.mission.done && T.progress.mission.count > 2.5 && T.progress.mission.count < 4, `count=${T.progress.mission.count.toFixed(2)}`);
+  gameAt(BASE + 5);
+  { const p = soloStart(); T.hearts = 2; T.stampDisc(p, T.CENTER, T.CENTER, 250, false); frames(2); }
+  check('land won after losing a heart does not count as "without losing hearts"', !T.progress.mission.done && T.progress.mission.count === 0, `count=${T.progress.mission.count}`);
+  gameAt(BASE + 6);
+  { const p = soloStart(); loopAt(p, T.CENTER, T.CENTER - 300, 120); }
+  check('a small loop does not count as a 1% loop', !T.progress.mission.done && T.progress.mission.count < 1, `count=${T.progress.mission.count.toFixed(2)}`);
+
+  // ---- progress, saving, reward once ----
+  gameAt(BASE + 0);
+  { const p = soloStart(); for (let k = 0; k < 3; k++) loopAt(p, T.CENTER - 400 + k * 200, T.CENTER - 300, 120); }
+  check('partial progress is counted', T.progress.mission.count === 3 && !T.progress.mission.done);
+  fire('menuBtn:click');
+  check('the card shows the progress bar', els.missionBar.style.width === '60%' && !hasClass('missionCard', 'done'), els.missionBar.style.width);
+  check('progress is saved when leaving a round', stored().mission.count === 3 && stored().mission.day === BASE);
+  boot(localStorage._d);
+  check('progress survives a restart', T.progress.mission.count === 3 && els.missionBar.style.width === '60%');
+  const coinsBefore = T.progress.coins;
+  { const p = soloStart(); for (let k = 0; k < 2; k++) loopAt(p, T.CENTER - 300 + k * 200, T.CENTER + 300, 120); }
+  check('finishing pays 50 coins and marks the card done', T.progress.mission.done && T.progress.coins - coinsBefore === 50 && hasClass('missionCard', 'done'), `+${T.progress.coins - coinsBefore}`);
+  { const p = T.player; for (let k = 0; k < 3; k++) loopAt(p, T.CENTER - 300 + k * 200, T.CENTER + 600, 120); }
+  check('doing more the same day pays nothing more', T.progress.coins - coinsBefore === 50 && T.progress.missionsDone === 1);
+  check('completion is saved', stored().mission.done === true && stored().missionsDone === 1 && stored().streak === 1);
+  boot(localStorage._d);
+  check('a finished mission is still shown as done after a restart', hasClass('missionCard', 'done'));
+
+  // ---- streak ----
+  gameAt(BASE + 0);
+  doers.loops5();
+  check('first day: streak of one, nothing shown yet', T.progress.streak === 1 && els.missionStreak.textContent === '');
+  atDay(BASE + 1); boot(localStorage._d);
+  doers.own4();
+  check('next day in a row: the streak grows', T.progress.streak === 2 && T.progress.lastDoneDay === BASE + 1, `streak=${T.progress.streak}`);
+  fire('menuBtn:click');
+  check('the streak is shown as days in a row', els.missionStreak.textContent === '2 days in a row', els.missionStreak.textContent);
+  atDay(BASE + 3); boot(localStorage._d);
+  check('missing a day quietly hides the streak, with no scolding', els.missionStreak.textContent === '' && hasClass('missionCard', 'done') === false);
+  doers.play90();
+  check('after a gap the streak restarts at one', T.progress.streak === 1 && T.progress.lastDoneDay === BASE + 3 && T.progress.missionsDone === 3, `streak=${T.progress.streak} done=${T.progress.missionsDone}`);
+  check('three missions earn the "3 missions" star', T.progress.stars.mission3 === true && stored().stars.mission3 === true);
+  check('mission coins count toward lifetime coins earned', T.progress.coinsEarned >= 150, `earned=${T.progress.coinsEarned}`);
+
+  // ---- a new day starts between rounds, never during one ----
+  gameAt(BASE + 0);
+  { const p = soloStart(); for (let k = 0; k < 2; k++) loopAt(p, T.CENTER - 300 + k * 200, T.CENTER - 300, 120); }
+  atDay(BASE + 1);                                              // midnight passes during the round
+  frames(5);
+  { const p = T.player; loopAt(p, T.CENTER + 300, T.CENTER - 300, 120); }
+  check('the round keeps counting toward the mission it started with', T.progress.mission.day === BASE && T.progress.mission.count === 3, `day=${T.progress.mission.day - BASE} count=${T.progress.mission.count}`);
+  T.hearts = 1; T.kill(T.player, null, 'wall');
+  click('menuBtn');
+  check('back at the menu the new day brings a fresh mission', T.progress.mission.day === BASE + 1 && T.progress.mission.count === 0 && els.missionText.textContent === T.MISSIONS[1].text, `day=${T.progress.mission.day - BASE}`);
+  check('yesterday\'s progress was saved before the swap, not lost', stored().mission.day === BASE && stored().mission.count === 3, `stored day=${stored().mission.day - BASE} count=${stored().mission.count}`);
+
+  // ---- bad saved data, reset, tone ----
+  atDay(BASE + 2);
+  boot(Object.assign({}, DEFAULT_STORE, { 'loopfront.progress': JSON.stringify({ mission: { day: 'x', count: -4 }, streak: -2, missionsDone: 'lots', lastDoneDay: null }) }));
+  check('invalid saved mission data falls back to a fresh mission', T.progress.mission.day === BASE + 2 && T.progress.mission.count === 0 && T.progress.streak === 0 && T.progress.missionsDone === 0);
+  gameAt(BASE + 0);
+  doers.loops5();
+  openParentViaGate();
+  click('resetBtn'); click('resetBtn');
+  check('reset clears the streak and mission history', T.progress.streak === 0 && T.progress.missionsDone === 0 && T.progress.lastDoneDay === 0 && T.progress.mission.done === false && stored().streak === 0);
+  click('parentCloseBtn');
+  const litsM = [...src.matchAll(/'([^'\\\n]*)'/g)].map(m => m[1]);
+  const bodyM = html.replace(/<script>[\s\S]*?<\/script>/, '').replace(/<style>[\s\S]*?<\/style>/, '').replace(/<[^>]+>/g, ' ');
+  const pressure = /don.t break|hurry|expire|miss out|last chance|lose your streak|only today|running out|streak lost|don.t forget/i;
+  check('no pressure wording anywhere', !litsM.some(l => pressure.test(l)) && !pressure.test(bodyM), litsM.filter(l => pressure.test(l)).join(' | '));
+  check('the mission card exists on the start screen', /<div id="missionCard" class="mission">/.test(html));
 }
 
 

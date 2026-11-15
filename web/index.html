@@ -150,6 +150,14 @@
   @keyframes wobble { 0%, 100% { transform: none; } 20% { transform: translateX(-6px) rotate(-3deg); } 40% { transform: translateX(6px) rotate(3deg); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
   #shopMsg { min-height: 1.4em; margin: 6px 0 4px; font-size: 17px; }
   #helpText { margin: 10px 0 0; font-size: 16px; opacity: 0.75; }
+  .mission { display: flex; align-items: center; gap: 10px; margin: 10px 0 2px; padding: 6px 10px; border-radius: 16px; border: 3px solid var(--ink); background: #f4fbff; text-align: left; }
+  .mission canvas { width: 36px; height: 36px; flex: none; }
+  .mission .mtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; font-size: 17px; line-height: 1.1; }
+  .mbar { display: block; height: 10px; border-radius: 5px; background: #e3e6ee; overflow: hidden; }
+  .mbar i { display: block; height: 100%; width: 0; background: var(--sun); }
+  .mission.done { background: #e9fbe9; }
+  .mission.done .mbar i { background: var(--green); }
+  #missionStreak { font-size: 14px; opacity: 0.8; white-space: nowrap; }
   .steerrow { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 0 0 12px; }
   .steerrow .field { margin: 0; }
   .steerrow .round.sel { background: var(--sun); }
@@ -291,6 +299,11 @@
         <svg class="on" viewBox="0 0 32 32"><path d="M4 12h6l8-7v22l-8-7H4z" fill="#2b2d42"/><path d="M22 11c3 3 3 7 0 10M25 8c5 5 5 11 0 16" fill="none" stroke="#2b2d42" stroke-width="3" stroke-linecap="round"/></svg>
         <svg class="off" viewBox="0 0 32 32"><path d="M4 12h6l8-7v22l-8-7H4z" fill="#2b2d42"/><path d="M22 11l8 10M30 11l-8 10" fill="none" stroke="#ef476f" stroke-width="3.5" stroke-linecap="round"/></svg>
       </button>
+    </div>
+    <div id="missionCard" class="mission">
+      <canvas id="missionIcon" width="72" height="72"></canvas>
+      <div class="mtext"><span id="missionText"></span><span class="mbar"><i id="missionBar"></i></span></div>
+      <span id="missionStreak"></span>
     </div>
     <p id="helpText">Use the mouse or arrow keys. Leave your land, draw a loop, come back home!</p>
     <div id="cornerBar">
@@ -803,6 +816,8 @@ function capture(e) {
     const gained = (counts[id] - before) / arenaCells * 100;
     if (gained >= 0.01) {
       roundLoops++;
+      missionEvent('loops5', 1);
+      missionEvent('bigloop1', gained);
       addFloat(e.x, e.y - 34, '+' + gained.toFixed(2) + '%', e.hex);
       if (roundLoops % 3 === 0) addFloat(e.x, e.y - 62, 'Great loop!', '#8338ec');
       confetti(e.x, e.y, 24);
@@ -919,7 +934,8 @@ function releaseKeys() { input.left = false; input.right = false; input.up = fal
 const settings = { name: '', color: PLAYER_COLORS[0], character: 'cat', sound: true, seenHowTo: false, steer: 'finger',
                    hat: 'none', trail: 'plain', theme: 'sand' };
 const parentCfg = { difficulty: 'easy', breakMin: 30, saver: false, lockUntil: 0 };
-const progress = { best: 0, rounds: 0, stars: {}, coins: 0, owned: {}, coinsEarned: 0, bought: 0 };
+const progress = { best: 0, rounds: 0, stars: {}, coins: 0, owned: {}, coinsEarned: 0, bought: 0,
+                   mission: { day: -1, done: false, count: 0 }, streak: 0, missionsDone: 0, lastDoneDay: 0 };
 
 const particles = [];
 const floats = [];
@@ -971,6 +987,13 @@ function loadStore() {
     if (typeof g.coins === 'number' && isFinite(g.coins)) progress.coins = Math.max(0, Math.floor(g.coins));
     if (typeof g.coinsEarned === 'number' && isFinite(g.coinsEarned)) progress.coinsEarned = Math.max(0, Math.floor(g.coinsEarned));
     if (typeof g.bought === 'number' && isFinite(g.bought)) progress.bought = Math.max(0, Math.floor(g.bought));
+    if (typeof g.streak === 'number' && isFinite(g.streak)) progress.streak = Math.max(0, Math.floor(g.streak));
+    if (typeof g.missionsDone === 'number' && isFinite(g.missionsDone)) progress.missionsDone = Math.max(0, Math.floor(g.missionsDone));
+    if (typeof g.lastDoneDay === 'number' && isFinite(g.lastDoneDay)) progress.lastDoneDay = Math.max(0, Math.floor(g.lastDoneDay));
+    const gm = g.mission;
+    if (gm && typeof gm === 'object' && typeof gm.day === 'number' && isFinite(gm.day) && gm.day >= 0 && typeof gm.count === 'number' && isFinite(gm.count)) {
+      progress.mission = { day: Math.floor(gm.day), done: gm.done === true, count: Math.max(0, gm.count) };
+    }
     if (g.owned && typeof g.owned === 'object') {
       for (const k of Object.keys(g.owned)) {
         const [tab, id] = k.split(':');
@@ -1121,7 +1144,8 @@ const GOALS = [
   { id: 'loops10',    label: '10 loops',      ok: () => roundLoops >= 10 },
   { id: 'power5',     label: '5 power-ups',   ok: () => roundPower >= 5 },
   { id: 'coins200',   label: 'Earn 200 coins', life: true, ok: () => progress.coinsEarned >= 200 },
-  { id: 'dress1',     label: 'Get a new look', life: true, ok: () => progress.bought >= 1 }
+  { id: 'dress1',     label: 'Get a new look', life: true, ok: () => progress.bought >= 1 },
+  { id: 'mission3',   label: '3 missions',    life: true, ok: () => progress.missionsDone >= 3 }
 ];
 
 // Awards any goals now reached. `silent` is the end-of-round pass: it works even though the player is
@@ -1139,6 +1163,99 @@ function checkStars(silent) {
       sfx('star');
     }
   }
+}
+
+/* ---- daily mission and streak: one small goal a day, no pressure ---- */
+const MISSIONS = [
+  { id: 'loops5',   text: 'Draw 5 loops',                 target: 5,  add: true },
+  { id: 'own4',     text: 'Own 4% of the island',         target: 4 },
+  { id: 'tag2',     text: 'Tag 2 pals',                   target: 2,  add: true },
+  { id: 'play90',   text: 'Play for 90 seconds',          target: 90 },
+  { id: 'power3',   text: 'Grab 3 power-ups',             target: 3,  add: true },
+  { id: 'clean2',   text: 'Own 2% without losing hearts', target: 2 },
+  { id: 'bigloop1', text: 'Draw one 1% loop',             target: 1 },
+  { id: 'rounds3',  text: 'Finish 3 rounds',              target: 3,  add: true }
+];
+const MISSION_COINS = 50;
+let missionDirty = false;
+
+// local calendar day number (always derived from Date.now so tests can control time)
+function dayKey() {
+  const now = Date.now();
+  return Math.floor((now - new Date(now).getTimezoneOffset() * 60000) / 86400000);
+}
+const missionFor = day => MISSIONS[((day % MISSIONS.length) + MISSIONS.length) % MISSIONS.length];
+
+// A new day gets a fresh mission. Only called between rounds, so a round never changes its own mission.
+function syncMissionDay() {
+  const d = dayKey();
+  if (progress.mission.day !== d) { progress.mission = { day: d, done: false, count: 0 }; missionDirty = true; }
+  return progress.mission;
+}
+
+// progress events from play: counted ones add up, "best so far" ones keep the largest value
+function missionEvent(id, n) {
+  const m = progress.mission;
+  if (m.day < 0 || m.done) return;
+  const ms = missionFor(m.day);
+  if (ms.id !== id) return;
+  const before = m.count;
+  if (ms.add) m.count += n; else if (n > m.count) m.count = n;
+  if (m.count === before) return;
+  if (m.count >= ms.target) completeMission(); else missionDirty = true;
+}
+function flushMission() { if (missionDirty) { missionDirty = false; saveProgress(); } }
+
+function streakNow() {
+  const d = dayKey();
+  return progress.lastDoneDay === d || progress.lastDoneDay === d - 1 ? progress.streak : 0;
+}
+
+function completeMission() {
+  const m = progress.mission, ms = missionFor(m.day);
+  m.done = true; m.count = Math.max(m.count, ms.target);
+  progress.missionsDone++;
+  progress.streak = progress.lastDoneDay === m.day - 1 ? progress.streak + 1 : 1;
+  progress.lastDoneDay = m.day;
+  progress.coins += MISSION_COINS; progress.coinsEarned += MISSION_COINS;
+  checkLifetimeStars();
+  missionDirty = false;
+  saveProgress();
+  refreshCoins();
+  refreshMission();
+  if (mode === 'playing' && player) {
+    addFloat(player.x, player.y - 76, 'Mission done!', '#06a77d');
+    confetti(player.x, player.y, 30);
+  }
+  sfx('star');
+}
+
+function drawMissionIcon(done) {
+  const g = $('missionIcon').getContext('2d');
+  g.clearRect(0, 0, 72, 72);
+  g.lineWidth = 4; g.strokeStyle = INK; g.lineCap = 'round'; g.lineJoin = 'round';
+  if (done) {
+    g.beginPath(); g.arc(36, 36, 30, 0, TAU); g.fillStyle = '#7ae582'; g.fill(); g.stroke();
+    g.beginPath(); g.moveTo(21, 37); g.lineTo(32, 48); g.lineTo(52, 25);
+    g.strokeStyle = '#ffffff'; g.lineWidth = 8; g.stroke();
+  } else {
+    g.beginPath(); g.arc(36, 36, 30, 0, TAU); g.fillStyle = '#ffffff'; g.fill(); g.stroke();
+    g.beginPath(); g.arc(36, 36, 20, 0, TAU); g.fillStyle = '#ef476f'; g.fill();
+    g.beginPath(); g.arc(36, 36, 10, 0, TAU); g.fillStyle = '#ffffff'; g.fill();
+    g.beginPath(); g.arc(36, 36, 4, 0, TAU); g.fillStyle = '#ef476f'; g.fill();
+  }
+}
+
+function refreshMission() {
+  const m = mode === 'playing' ? progress.mission : syncMissionDay();   // never swap missions mid-round
+  if (m.day < 0) return;
+  const ms = missionFor(m.day);
+  $('missionText').textContent = ms.text;
+  $('missionBar').style.width = Math.min(100, m.count / ms.target * 100) + '%';
+  toggleClass($('missionCard'), 'done', m.done);
+  drawMissionIcon(m.done);
+  const st = streakNow();
+  $('missionStreak').textContent = st >= 2 ? st + ' days in a row' : '';
 }
 
 // Goals that are not tied to one round (coins, shopping). Never pays coins itself, so there is no loop.
@@ -1197,6 +1314,7 @@ function kill(e, killer, cause) {
   if (killer && killer !== e) {
     killer.kills++;
     if (killer.isPlayer) {
+      missionEvent('tag2', 1);
       addFeed('You tagged ' + e.name + '!', true);
       addFloat(killer.x, killer.y - 40, 'TAG!', '#d62828');
       sfx('tag');
@@ -1259,6 +1377,7 @@ function endGame(pct, killer, cause) {
     win: 'You own the whole island!'
   };
   progress.rounds++;
+  missionEvent('rounds3', 1);
   noteBest(pct);
   saveProgress();
   refreshBest();
@@ -1576,6 +1695,7 @@ function spawnPickup() {
 
 function collectPickup(pu) {
   roundPower++;
+  missionEvent('power3', 1);
   const secs = POWERUPS[pu.type].secs;
   if (pu.type === 'zoom') { zoomUntil = simTime + secs; addFloat(pu.x, pu.y - 30, 'Zoom!', '#f77f00'); }
   else if (pu.type === 'bubble') {
@@ -1689,6 +1809,9 @@ function stepCore(h) {
   if (mode === 'playing' && player && player.alive) {
     const p = pctOf(player);
     noteBest(p);
+    missionEvent('own4', p);
+    missionEvent('clean2', hearts === diff.hearts ? p : 0);
+    missionEvent('play90', simTime - player.bornAt);
     updatePickups();
     checkStars(false);
     if (counts[player.id] >= arenaCells * 0.999 && !pendingEnd) pendingEnd = { pct: p, killer: null, cause: 'win' };
@@ -2337,6 +2460,7 @@ function startGame() {
   saveSettings();
   playerName = typed || pick(FUN_NAMES);
   nickInput.blur();
+  syncMissionDay();                                // today's mission, decided between rounds
   startMatch(true);
   paused = false;
   mode = 'playing';
@@ -2362,6 +2486,7 @@ function showMenu() {
   clearTimeout(overTimer);
   if (mode === 'playing' && player) noteBest(pctOf(player));   // leaving mid-round keeps the record
   accountPlay(false);
+  flushMission();
   paused = false;
   startMatch(false);
   mode = 'menu';
@@ -2369,12 +2494,14 @@ function showMenu() {
   hide(hud);
   show(startScreen);
   setAwake(false);
+  refreshMission();
   wake();
 }
 
 function pauseRound() {
   if (mode !== 'playing' || paused) return;
   accountPlay(false);
+  flushMission();
   paused = true;
   show(pauseScreen);
   setAwake(false);
@@ -2655,8 +2782,10 @@ function resetProgress() {
   resetArmedAt = 0;
   progress.best = 0; progress.rounds = 0; progress.stars = {};
   progress.coins = 0; progress.owned = {}; progress.coinsEarned = 0; progress.bought = 0;
+  progress.mission = { day: -1, done: false, count: 0 }; progress.streak = 0; progress.missionsDone = 0; progress.lastDoneDay = 0;
+  missionDirty = false;
   settings.hat = 'none'; settings.trail = 'plain'; settings.theme = 'sand';
-  saveSettings(); applyTheme(); refreshChars(); refreshCoins();
+  saveSettings(); applyTheme(); refreshChars(); refreshCoins(); refreshMission();
   bestPct = 0;                                     // a stale round peak must never restore the old record
   saveProgress();
   refreshBest();
@@ -2829,13 +2958,13 @@ window.addEventListener('resize', () => { resize(); if (!loopOn) renderOnce(); }
 
 document.addEventListener('visibilitychange', () => {
   pageHidden = !!document.hidden;
-  if (pageHidden) { accountPlay(false); pauseRound(); stopLoop(); setAwake(false); audioSleep(true); }
+  if (pageHidden) { accountPlay(false); flushMission(); pauseRound(); stopLoop(); setAwake(false); audioSleep(true); }
   else { audioSleep(false); wake(); }
 });
 
 /* ---- hooks for the Android app wrapper ---- */
 window.onLoopfrontUpdate = showUpdate;
-window.onLoopfrontPause = () => { appPaused = true; accountPlay(false); pauseRound(); stopLoop(); setAwake(false); audioSleep(true); };
+window.onLoopfrontPause = () => { appPaused = true; accountPlay(false); flushMission(); pauseRound(); stopLoop(); setAwake(false); audioSleep(true); };
 window.onLoopfrontResume = () => { appPaused = false; audioSleep(false); wake(); };
 window.onLoopfrontBack = () => {
   if (isOpen(gateScreen)) { closeGate(); return true; }
@@ -2859,6 +2988,7 @@ refreshChars();
 refreshSound();
 refreshBest();
 refreshCoins();
+refreshMission();
 applyTheme();
 drawCoin($('shopCoinCv').getContext('2d'), 56);
 drawCoin($('ovCoinCv').getContext('2d'), 56);

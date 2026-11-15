@@ -14,6 +14,7 @@ GitHub Actions workflow builds the APK for you.
 - Crossing another player's trail takes them out. Crossing your own trail takes you out. Bumping head-on takes out whoever is not standing on their own land (both, if neither is).
 - Friendly power-ups appear on the island and fade after a while. Only you can pick them up: **Zoom** (a speed boost), **Bubble** (a safe bubble) and **Freeze** (slows every pal down).
 - Coins are earned by playing (land, tags, loops, stars and power-ups) and spent in the **dress-up shop** on hats, trail styles and island looks (snow, candy, space). Every item has a fixed, visible price. There is no real money, no timers and no random items.
+- Each day has one small **daily mission** on the start screen (for example "Draw 5 loops"). Finishing it pays 50 coins, and finishing on consecutive days builds a quiet "days in a row" counter. There are no reminders, notifications or countdowns, and missing a day just hides the counter.
 - Easy mode gives a bouncy island edge and a few seconds of protection at the start. Earn stars for owning more of the island, tagging pals, playing for two minutes and drawing loops.
 
 ## Install on a Fire tablet
