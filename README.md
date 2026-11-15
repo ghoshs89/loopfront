@@ -7,6 +7,13 @@ own and you are out. Pick a buddy, a colour and a name, then play against comput
 The game is a single offline web page (`web/index.html`). `android/` wraps it in a tiny Android app, and a
 GitHub Actions workflow builds the APK for you.
 
+## How to play
+
+- Hold a finger (or the mouse) where you want to go. On a keyboard, W A S D or the arrow keys point you toward that side of the screen.
+- Your land is your safe place. Leave it and you draw a trail; loop back home and everything inside the loop becomes yours.
+- Crossing another player's trail takes them out. Crossing your own trail takes you out. Bumping head-on takes out whoever is not standing on their own land (both, if neither is).
+- Easy mode gives a bouncy island edge and a few seconds of protection at the start. Earn stars for owning more of the island, tagging pals, playing for two minutes and drawing loops.
+
 ## Install on a Fire tablet
 
 1. On the tablet, open this link in the Silk browser:
@@ -57,6 +64,17 @@ side of the screen).
 `node tests/harness.js web/index.html` runs a headless simulation of the rules, steering, kid settings,
 grown-ups gate, break reminder, update panel, battery behaviour and offline/safety scan.
 
-## Notes
+## Project layout
 
-Original repository text: "# loopy" (the repository was originally named loopy)
+| Path | What it is |
+|---|---|
+| `web/index.html` | The whole game: one offline page, no libraries or assets. |
+| `android/` | Minimal Android app (a full-screen WebView) that bundles `web/` and talks to the page through a small bridge. |
+| `.github/workflows/build-apk.yml` | Builds, signs and publishes the APK. |
+| `tests/harness.js` | Headless tests (needs Node). |
+
+## Keep the signing key safe
+
+Android only installs an update over an existing app if both are signed with the same key. The key lives in
+the repository's Actions secrets and in a private backup outside the repository. If it is ever lost, the
+app must be uninstalled once before a build signed with a new key can be installed.
