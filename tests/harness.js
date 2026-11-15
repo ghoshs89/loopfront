@@ -177,7 +177,7 @@ function placeOnTrail(bot, p, name) {
   bot.alive = true; bot.name = name; bot.kills = 0; bot.isPlayer = false;
   bot.bx0 = T.N; bot.by0 = T.N; bot.bx1 = -1; bot.by1 = -1;
   bot.x = bot.px = p.tx[k] + 3; bot.y = bot.py = p.ty[k];
-  T.stampDisc(bot, bot.x + 400, bot.y, 30, false);
+  T.stampDisc(bot, bot.x, bot.y, 20, false);               // a patch of its own right here: always inside the island
   bot.ai = { state: 'attack', plan: null, next: 1e9, homeSince: 0, bold: 1, caution: 0.7, aggr: 0, ax: 0, ay: 0 };
   bot.angle = bot.targetAngle = 0;
 }
