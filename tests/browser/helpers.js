@@ -23,3 +23,27 @@ function overlap(a, b) {
 }
 
 module.exports = { seen, open, overlap };
+
+// Solve the grown-ups multiplication question on screen.
+async function answerGate(page) {
+  const q = (await page.locator('#gateQ').textContent()).match(/(\d+) x (\d+)/);
+  const answer = Number(q[1]) * Number(q[2]);
+  for (const d of String(answer)) await page.locator('#gateKey' + d).click();
+  await page.locator('#gateOk').click();
+}
+
+// Start with a daily limit of 30 minutes and `sec` seconds already played today.
+async function seedLimit(page, sec) {
+  await page.addInitScript(([used]) => {
+    try {
+      const now = Date.now();
+      const day = Math.floor((now - new Date(now).getTimezoneOffset() * 60000) / 86400000);
+      localStorage.setItem('loopfront.settings', JSON.stringify({ name: '', color: '#ef476f', character: 'cat', sound: true, seenHowTo: true }));
+      localStorage.setItem('loopfront.parent', JSON.stringify({ difficulty: 'easy', breakMin: 0, saver: false, dailyMin: 30 }));
+      localStorage.setItem('loopfront.usage', JSON.stringify({ day, sec: used, extraSec: 0, rounds: 0, best: 0 }));
+    } catch (e) { /* ignore */ }
+  }, [sec]);
+}
+
+module.exports.answerGate = answerGate;
+module.exports.seedLimit = seedLimit;
