@@ -36,6 +36,8 @@ locks for a minute after three wrong answers. Inside you can:
 |---|---|
 | Difficulty | Easy (default): 3 hearts (a mistake costs a heart and sends you home with your land kept), 6 slower pals that never chase you and steer around your trail, a bouncy island edge and 5 seconds of protection at the start. Normal: 2 hearts, more and faster pals that can chase. Hard: one life. |
 | Break reminder | After 15, 30 (default) or 45 minutes of actual play (menus, pauses, results and time in the background do not count) a "Time for a stretch!" screen appears between rounds. It is never shown in the middle of a round. |
+| Daily limit | Off (default), 30, 60 or 90 minutes of actual play per day. When it is reached, the next Play shows "All done for today!" instead of starting a round (a round in progress is never cut short). A grown-up can tap "15 more minutes" and answer the question. The limit wins over the break reminder. A new day starts fresh. |
+| Today's summary | Minutes played, rounds and best score for today, shown at the top of the Grown-ups corner. |
 | Battery saver | Draws 30 frames per second instead of 60. Game speed does not change. |
 | Check for updates | The only feature that uses the internet. It runs only when you tap it. |
 | Reset | Clears all progress: stars, best score, coins and everything in the shop. |

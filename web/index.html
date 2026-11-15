@@ -192,7 +192,9 @@
   #updateNotes { margin: 2px 0 6px; font-size: 14px; opacity: 0.75; max-height: 4.6em; overflow-y: auto; }
   #verLabel { font-size: 15px; opacity: 0.7; }
   #breakCount { font-size: 48px; font-weight: 900; font-variant-numeric: tabular-nums; margin: 6px 0; }
-  #breakSkipBtn { margin-top: 10px; background: none; border: 0; font-size: 14px; opacity: 0.6; text-decoration: underline; min-height: 44px; }
+  #breakSkipBtn, #doneMoreBtn { margin-top: 10px; background: none; border: 0; font-size: 14px; opacity: 0.6; text-decoration: underline; min-height: 44px; }
+  #parentCard { max-height: 90vh; overflow-y: auto; touch-action: pan-y; }
+  #usageLine { margin: 4px 0 8px; font-size: 15px; opacity: 0.75; }
 
   @media (max-width: 900px) {
     #feed { top: auto; bottom: 14px; }
@@ -399,6 +401,16 @@
   </div>
 </div>
 
+<div id="doneScreen" class="overlay hidden">
+  <div class="card panel">
+    <canvas id="doneCreature" width="160" height="160"></canvas>
+    <h2>All done for today!</h2>
+    <p>See you tomorrow.</p>
+    <button id="doneHomeBtn" class="btn green" type="button">OK</button>
+    <button id="doneMoreBtn" type="button">Grown-ups: 15 more minutes</button>
+  </div>
+</div>
+
 <div id="gateScreen" class="overlay hidden">
   <div class="card panel">
     <h2>Grown-ups only</h2>
@@ -417,7 +429,7 @@
 </div>
 
 <div id="parentScreen" class="overlay hidden">
-  <div class="card panel">
+  <div id="parentCard" class="card panel">
     <h2>Grown-ups corner</h2>
     <div class="setrow"><span class="t">Difficulty</span>
       <div class="seg"><button id="diffEasy" type="button">Easy</button><button id="diffNormal" type="button">Normal</button><button id="diffHard" type="button">Hard</button></div>
@@ -425,6 +437,10 @@
     <div class="setrow"><span class="t">Break reminder</span>
       <div class="seg"><button id="break0" type="button">Off</button><button id="break15" type="button">15 min</button><button id="break30" type="button">30 min</button><button id="break45" type="button">45 min</button></div>
     </div>
+    <div class="setrow"><span class="t">Daily limit</span>
+      <div class="seg"><button id="limit0" type="button">Off</button><button id="limit30" type="button">30 min</button><button id="limit60" type="button">60 min</button><button id="limit90" type="button">90 min</button></div>
+    </div>
+    <div id="usageLine"></div>
     <div class="setrow"><span class="t">Battery saver</span>
       <div class="seg"><button id="saverBtn" type="button">Off</button></div>
     </div>
@@ -572,7 +588,8 @@ const show = el => el.classList.remove('hidden');
 const hide = el => el.classList.add('hidden');
 const isOpen = el => !el.classList.contains('hidden');
 const toggleClass = (el, cls, on) => { if (on) el.classList.add(cls); else el.classList.remove(cls); };
-const OVERLAYS = [howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, gateScreen, parentScreen, overScreen, startScreen];
+const doneScreen = $('doneScreen');
+const OVERLAYS = [howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, doneScreen, gateScreen, parentScreen, overScreen, startScreen];
 
 let vw = 1, vh = 1, dpr = 1;
 function resize() {
@@ -917,8 +934,23 @@ let nextPickupAt = 0, zoomUntil = 0, bubbleUntil = 0, freezeUntil = 0, roundPowe
 function accountPlay(keepRunning) {
   if (activeSince === null) return;
   const now = performance.now();
-  playedSec += Math.max(0, now - activeSince) / 1000;
+  const dt = Math.max(0, now - activeSince) / 1000;
+  playedSec += dt;
+  usage.sec += dt; usageDirty = true;
+  if (usage.sec - usageSavedSec >= 30) flushUsage();       // a light safety save every 30 s of play
   activeSince = keepRunning ? now : null;
+}
+
+function flushUsage() { usageDirty = false; usageSavedSec = usage.sec; saveUsage(); }
+// a new calendar day starts a fresh count (checked between rounds and when the settings open)
+function syncUsageDay() {
+  const d = dayKey();
+  if (usage.day !== d) { usage.day = d; usage.sec = 0; usage.extraSec = 0; usage.rounds = 0; usage.best = 0; usageSavedSec = 0; usageDirty = true; }
+}
+function limitReached() {
+  if (parentCfg.dailyMin <= 0) return false;
+  syncUsageDay();
+  return usage.sec >= parentCfg.dailyMin * 60 + usage.extraSec;
 }
 let playerName = '';
 const newStars = [];
@@ -933,7 +965,10 @@ function releaseKeys() { input.left = false; input.right = false; input.up = fal
 
 const settings = { name: '', color: PLAYER_COLORS[0], character: 'cat', sound: true, seenHowTo: false, steer: 'finger',
                    hat: 'none', trail: 'plain', theme: 'sand' };
-const parentCfg = { difficulty: 'easy', breakMin: 30, saver: false, lockUntil: 0 };
+const parentCfg = { difficulty: 'easy', breakMin: 30, saver: false, lockUntil: 0, dailyMin: 0 };
+// today's play, for the daily limit and the grown-ups summary (a separate key so progress resets never touch it)
+const usage = { day: -1, sec: 0, extraSec: 0, rounds: 0, best: 0 };
+let usageDirty = false, usageSavedSec = 0;
 const progress = { best: 0, rounds: 0, stars: {}, coins: 0, owned: {}, coinsEarned: 0, bought: 0,
                    mission: { day: -1, done: false, count: 0 }, streak: 0, missionsDone: 0, lastDoneDay: 0 };
 
@@ -953,6 +988,7 @@ function writeJSON(key, val) {
 const saveSettings = () => writeJSON('loopfront.settings', settings);
 const saveParent = () => writeJSON('loopfront.parent', parentCfg);
 const saveProgress = () => writeJSON('loopfront.progress', progress);
+const saveUsage = () => writeJSON('loopfront.usage', usage);
 
 function loadStore() {
   const s = readJSON('loopfront.settings');
@@ -971,11 +1007,17 @@ function loadStore() {
   if (p && typeof p === 'object') {
     if (DIFFICULTY[p.difficulty]) parentCfg.difficulty = p.difficulty;
     if ([0, 15, 30, 45].indexOf(p.breakMin) >= 0) parentCfg.breakMin = p.breakMin;
+    if ([0, 30, 60, 90].indexOf(p.dailyMin) >= 0) parentCfg.dailyMin = p.dailyMin;
     if (typeof p.saver === 'boolean') parentCfg.saver = p.saver;
     // an unexpired gate lockout survives restarts; absurdly distant values are ignored
     if (typeof p.lockUntil === 'number' && isFinite(p.lockUntil) && p.lockUntil - Date.now() <= 60000) {
       parentCfg.lockUntil = p.lockUntil;
     }
+  }
+  const u = readJSON('loopfront.usage');
+  if (u && typeof u === 'object' && typeof u.day === 'number' && isFinite(u.day) && u.day >= 0 && u.day <= dayKey() + 1) {
+    usage.day = Math.floor(u.day);
+    for (const k of ['sec', 'extraSec', 'rounds', 'best']) if (typeof u[k] === 'number' && isFinite(u[k]) && u[k] >= 0) usage[k] = u[k];
   }
   const g = readJSON('loopfront.progress');
   if (g && typeof g === 'object') {
@@ -1204,7 +1246,7 @@ function missionEvent(id, n) {
   if (m.count === before) return;
   if (m.count >= ms.target) completeMission(); else missionDirty = true;
 }
-function flushMission() { if (missionDirty) { missionDirty = false; saveProgress(); } }
+function flushMission() { if (missionDirty) { missionDirty = false; saveProgress(); } if (usageDirty) flushUsage(); }
 
 function streakNow() {
   const d = dayKey();
@@ -1275,6 +1317,7 @@ function checkLifetimeStars() {
 // the all-time best actually increases, so ordinary frames never touch storage.
 function noteBest(pct) {
   if (pct > bestPct) bestPct = pct;
+  if (bestPct > usage.best) { usage.best = bestPct; usageDirty = true; }
   if (bestPct > progress.best) {
     progress.best = bestPct;
     saveProgress();
@@ -1377,6 +1420,7 @@ function endGame(pct, killer, cause) {
     win: 'You own the whole island!'
   };
   progress.rounds++;
+  usage.rounds++;
   missionEvent('rounds3', 1);
   noteBest(pct);
   saveProgress();
@@ -1388,6 +1432,7 @@ function endGame(pct, killer, cause) {
   progress.coinsEarned += earned;
   checkLifetimeStars();
   saveProgress();
+  flushUsage();
   refreshCoins();
   $('ovCoinsText').textContent = '+' + earned + (earned === 1 ? ' coin' : ' coins');
   toggleClass($('ovCoins'), 'hidden', earned === 0);
@@ -2461,6 +2506,7 @@ function startGame() {
   playerName = typed || pick(FUN_NAMES);
   nickInput.blur();
   syncMissionDay();                                // today's mission, decided between rounds
+  syncUsageDay();
   startMatch(true);
   paused = false;
   mode = 'playing';
@@ -2476,7 +2522,22 @@ function startGame() {
 }
 
 // Called by Play / Play again: handles the break reminder and the first-time tutorial.
+function showDone() {
+  const g = $('doneCreature').getContext('2d');
+  g.clearRect(0, 0, 160, 160);
+  drawCreature(g, 80, 100, 44, settings.character, settings.color, Math.PI / 2, 'happy', true, settings.hat);
+  show(doneScreen);
+}
+function grantMore() {
+  // 15 more minutes of headroom from now, even if the last round ran past the limit
+  const over = Math.max(usage.extraSec, usage.sec - parentCfg.dailyMin * 60);
+  usage.extraSec = over + 900;
+  flushUsage();
+  hide(doneScreen);
+  requestStart();
+}
 function requestStart() {
+  if (limitReached()) { showDone(); return; }       // between rounds only, and before the break reminder
   if (parentCfg.breakMin > 0 && playedSec >= parentCfg.breakMin * 60) { showBreak(); return; }
   if (!settings.seenHowTo) { openHow(true); return; }
   startGame();
@@ -2695,7 +2756,7 @@ function gateSubmit() {
   if (gateBuf !== '' && parseInt(gateBuf, 10) === gateA * gateB) {
     gateWrong = 0;
     closeGate();
-    if (gateTarget === 'break') closeBreak(); else openParent();
+    if (gateTarget === 'break') closeBreak(); else if (gateTarget === 'more') grantMore(); else openParent();
     return;
   }
   gateWrong++;
@@ -2720,6 +2781,9 @@ function refreshParent() {
   toggleClass($('diffNormal'), 'sel', parentCfg.difficulty === 'normal');
   toggleClass($('diffHard'), 'sel', parentCfg.difficulty === 'hard');
   for (const m of [0, 15, 30, 45]) toggleClass($('break' + m), 'sel', parentCfg.breakMin === m);
+  for (const m of [0, 30, 60, 90]) toggleClass($('limit' + m), 'sel', parentCfg.dailyMin === m);
+  syncUsageDay();
+  $('usageLine').textContent = 'Today ' + Math.round(usage.sec / 60) + ' min \u00b7 ' + usage.rounds + (usage.rounds === 1 ? ' round' : ' rounds') + ' \u00b7 best ' + usage.best.toFixed(2) + '%';
   $('saverBtn').textContent = parentCfg.saver ? 'On (30 fps)' : 'Off';
   toggleClass($('saverBtn'), 'sel', parentCfg.saver);
   const a = app();
@@ -2739,6 +2803,7 @@ function closeParent() { updateToken++; hide(parentScreen); }
 
 function setDifficulty(d) { parentCfg.difficulty = d; saveParent(); refreshParent(); }
 function setBreak(m) { parentCfg.breakMin = m; saveParent(); refreshParent(); }
+function setLimit(m) { parentCfg.dailyMin = m; saveParent(); refreshParent(); }
 
 function checkForUpdate() {
   const a = app();
@@ -2879,6 +2944,9 @@ $('diffEasy').addEventListener('click', () => setDifficulty('easy'));
 $('diffNormal').addEventListener('click', () => setDifficulty('normal'));
 $('diffHard').addEventListener('click', () => setDifficulty('hard'));
 for (const m of [0, 15, 30, 45]) $('break' + m).addEventListener('click', () => setBreak(m));
+for (const m of [0, 30, 60, 90]) $('limit' + m).addEventListener('click', () => setLimit(m));
+$('doneHomeBtn').addEventListener('click', () => hide(doneScreen));
+$('doneMoreBtn').addEventListener('click', () => openGate('more'));
 $('saverBtn').addEventListener('click', () => { parentCfg.saver = !parentCfg.saver; saveParent(); refreshParent(); });
 $('updateBtn').addEventListener('click', checkForUpdate);
 $('updateGetBtn').addEventListener('click', () => {
@@ -2888,7 +2956,7 @@ $('updateGetBtn').addEventListener('click', () => {
 $('resetBtn').addEventListener('click', resetProgress);
 $('parentCloseBtn').addEventListener('click', closeParent);
 
-const noOverlayOpen = () => ![howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, gateScreen, parentScreen].some(isOpen);
+const noOverlayOpen = () => ![howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, doneScreen, gateScreen, parentScreen].some(isOpen);
 
 const isEditable = t => !!t && (t.isContentEditable === true || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''));
 const isInteractive = t => isEditable(t) || (!!t && !!t.closest && !!t.closest('button, a[href], [role="button"]'));
@@ -2972,6 +3040,7 @@ window.onLoopfrontBack = () => {
   if (isOpen(howScreen)) { closeHow(); return true; }
   if (isOpen(starsScreen)) { hide(starsScreen); return true; }
   if (isOpen(shopScreen)) { hide(shopScreen); return true; }
+  if (isOpen(doneScreen)) { hide(doneScreen); return true; }
   if (breakOpen()) return true;
   if (mode === 'playing') { if (!paused) pauseRound(); return true; }
   return false;
@@ -2986,6 +3055,7 @@ buildSwatches();
 buildCharacters();
 refreshChars();
 refreshSound();
+syncUsageDay();
 refreshBest();
 refreshCoins();
 refreshMission();

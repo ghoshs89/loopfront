@@ -21,7 +21,7 @@ src = src.slice(0, tail) + `globalThis.__T = { entities, owner, counts, inArena,
   get hearts(){return hearts}, set hearts(v){hearts=v},
   pickups, get nextPickupAt(){return nextPickupAt}, get zoomUntil(){return zoomUntil}, get bubbleUntil(){return bubbleUntil},
   get freezeUntil(){return freezeUntil}, get roundPower(){return roundPower},
-  set roundLoops(v){roundLoops=v}, set roundPower(v){roundPower=v}, MISSIONS, dayKey, missionFor };\n` + src.slice(tail);
+  set roundLoops(v){roundLoops=v}, set roundPower(v){roundPower=v}, MISSIONS, dayKey, missionFor, usage };\n` + src.slice(tail);
 
 // ---- elements that start hidden in the HTML ----
 const seed = {};
@@ -177,7 +177,7 @@ function placeOnTrail(bot, p, name) {
   bot.alive = true; bot.name = name; bot.kills = 0; bot.isPlayer = false;
   bot.bx0 = T.N; bot.by0 = T.N; bot.bx1 = -1; bot.by1 = -1;
   bot.x = bot.px = p.tx[k] + 3; bot.y = bot.py = p.ty[k];
-  T.stampDisc(bot, bot.x + 400, bot.y, 30, false);
+  T.stampDisc(bot, bot.x, bot.y, 20, false);               // a patch of its own right here: always inside the island
   bot.ai = { state: 'attack', plan: null, next: 1e9, homeSince: 0, bold: 1, caution: 0.7, aggr: 0, ax: 0, ay: 0 };
   bot.angle = bot.targetAngle = 0;
 }
@@ -1466,6 +1466,139 @@ function bigLand() {
   const pressure = /don.t break|hurry|expire|miss out|last chance|lose your streak|only today|running out|streak lost|don.t forget/i;
   check('no pressure wording anywhere', !litsM.some(l => pressure.test(l)) && !pressure.test(bodyM), litsM.filter(l => pressure.test(l)).join(' | '));
   check('the mission card exists on the start screen', /<div id="missionCard" class="mission">/.test(html));
+}
+
+
+// =====================================================================
+// 19. WP5: daily limit and play summary
+// =====================================================================
+{
+  const BASE = 20000;
+  const offsetMs = new Date(0).getTimezoneOffset() * 60000;
+  const atDay = (d, extra) => { fakeNow = d * 86400000 + offsetMs + 43200000 + (extra || 0); };
+  const gameAt = (d, parent) => { atDay(d); freshGame(parent); };
+  const storedUsage = () => JSON.parse(localStorage._d['loopfront.usage']);
+  const playMin = (min) => frames(Math.round(min * 60000 / 250), 250);       // real time passes even on slow frames
+  const quietPals = () => { for (const e of T.entities) if (!e.isPlayer && e.alive) T.kill(e, null, 'wall'); for (const e of T.entities) if (!e.isPlayer) e.respawnAt = 1e9; };
+
+  // ---- the setting ----
+  gameAt(BASE, { difficulty: 'hard', breakMin: 0 });
+  openParentViaGate();
+  check('the daily limit is off by default', T.parentCfg.dailyMin === 0 && hasClass('limit0', 'sel'));
+  let ok = true;
+  for (const m of [30, 60, 90, 0]) {
+    click('limit' + m);
+    ok = ok && T.parentCfg.dailyMin === m && JSON.parse(localStorage._d['loopfront.parent']).dailyMin === m && hasClass('limit' + m, 'sel');
+  }
+  check('each limit can be chosen and is saved', ok);
+  click('parentCloseBtn');
+  boot(Object.assign({}, DEFAULT_STORE, { 'loopfront.parent': JSON.stringify({ difficulty: 'hard', breakMin: 0, saver: false, dailyMin: 45 }) }));
+  check('an invalid saved limit is ignored', T.parentCfg.dailyMin === 0);
+
+  // ---- counting and saving real play time ----
+  gameAt(BASE, { difficulty: 'hard', breakMin: 0, dailyMin: 30 });
+  let p = bigLand(); p.speed = 0; quietPals();
+  playMin(10);
+  check('today\'s play time counts real minutes', Math.abs(T.usage.sec - 600) < 2, `sec=${T.usage.sec.toFixed(1)}`);
+  const writes = localStorage.writes['loopfront.usage'] || 0;
+  check('usage is saved lightly while playing (about every 30 s)', writes >= 15 && writes <= 25, `${writes} writes in 10 min`);
+  click('pauseBtn');
+  check('pausing saves the exact usage', storedUsage().day === BASE && Math.abs(storedUsage().sec - T.usage.sec) < 0.01);
+  boot(localStorage._d);
+  check('usage survives a restart on the same day', Math.abs(T.usage.sec - 600) < 2 && T.usage.day === BASE, `sec=${T.usage.sec.toFixed(1)}`);
+
+  // ---- the limit is reached mid-round: nothing interrupts, the next start is blocked ----
+  gameAt(BASE, { difficulty: 'hard', breakMin: 0, dailyMin: 30 });
+  p = bigLand(); p.speed = 0; quietPals();
+  playMin(31);
+  check('passing the limit never interrupts a round', T.mode === 'playing' && hasClass('doneScreen', 'hidden') && T.usage.sec > 1800, `sec=${T.usage.sec.toFixed(0)}`);
+  T.kill(p, null, 'wall');
+  check('the round ends normally with its results', T.mode === 'over' && hasClass('doneScreen', 'hidden'));
+  click('againBtn');
+  check('the next start is blocked with a friendly screen', !hasClass('doneScreen', 'hidden') && T.mode === 'over');
+  check('the done screen says see you tomorrow', /All done for today/.test(html) && /See you tomorrow/.test(html));
+  click('doneHomeBtn');
+  check('OK closes the done screen', hasClass('doneScreen', 'hidden'));
+  click('playBtn');
+  check('Play on the start screen is blocked too', !hasClass('doneScreen', 'hidden') && T.mode === 'over');
+  check('Back closes the done screen', globalThis.onLoopfrontBack() === true && hasClass('doneScreen', 'hidden'));
+
+  // ---- grown-ups can add 15 minutes ----
+  click('againBtn');
+  click('doneMoreBtn');
+  check('"15 more minutes" asks the grown-up question first', !hasClass('gateScreen', 'hidden') && T.usage.extraSec === 0);
+  typeAnswer(readQuestion() + 1);
+  check('a wrong answer grants nothing', T.usage.extraSec === 0 && T.mode === 'over' && !hasClass('doneScreen', 'hidden'));
+  typeAnswer(readQuestion());
+  const headroom = () => T.parentCfg.dailyMin * 60 + T.usage.extraSec - T.usage.sec;
+  check('the right answer gives 15 more minutes and starts a round', T.mode === 'playing' && hasClass('doneScreen', 'hidden') && headroom() > 899 && headroom() < 901, `headroom=${headroom().toFixed(1)} s`);
+  check('the extra time is saved', storedUsage().extraSec === T.usage.extraSec && T.usage.extraSec >= 900);
+  const extra1 = T.usage.extraSec;
+  quietPals();
+  p = T.player; p.speed = 0; T.stampDisc(p, T.CENTER, T.CENTER, 1400, false); p.x = p.px = T.CENTER; p.y = p.py = T.CENTER;
+  playMin(15.5);
+  T.kill(p, null, 'wall');
+  click('againBtn');
+  check('after the extra 15 minutes the limit applies again', !hasClass('doneScreen', 'hidden'));
+  click('doneMoreBtn'); typeAnswer(readQuestion());
+  check('each tap adds another 15 minutes (once per tap)', T.mode === 'playing' && T.usage.extraSec - extra1 > 890 && T.usage.extraSec - extra1 < 1000 && headroom() > 899 && headroom() < 901, `extra ${extra1.toFixed(0)} -> ${T.usage.extraSec.toFixed(0)}`);
+
+  // ---- a new day starts fresh; off never blocks ----
+  atDay(BASE + 1);
+  boot(localStorage._d);
+  check('a new day starts a fresh count', T.usage.day === BASE + 1 && T.usage.sec === 0 && T.usage.extraSec === 0 && T.usage.rounds === 0);
+  click('playBtn');
+  check('and play is allowed again', T.mode === 'playing' && hasClass('doneScreen', 'hidden'));
+
+  gameAt(BASE, { difficulty: 'hard', breakMin: 0, dailyMin: 0 });
+  T.usage.sec = 99999;
+  click('playBtn');
+  check('with the limit off nothing ever blocks', T.mode === 'playing' && hasClass('doneScreen', 'hidden'));
+
+  // ---- the limit and the break reminder ----
+  gameAt(BASE, { difficulty: 'hard', breakMin: 15, dailyMin: 30 });
+  T.usage.sec = 1900; T.playedSec = 1000;
+  click('playBtn');
+  check('when both are due, the daily limit wins', !hasClass('doneScreen', 'hidden') && hasClass('breakScreen', 'hidden'));
+  gameAt(BASE, { difficulty: 'hard', breakMin: 15, dailyMin: 30 });
+  T.usage.sec = 100; T.playedSec = 1000;
+  click('playBtn');
+  check('when only the break is due, the break shows', hasClass('doneScreen', 'hidden') && !hasClass('breakScreen', 'hidden'));
+
+  // ---- menus and pauses do not use up the day ----
+  gameAt(BASE, { difficulty: 'hard', breakMin: 0, dailyMin: 30 });
+  const before = T.usage.sec;
+  for (let k = 0; k < 40; k++) { if (k % 8 === 0) poke(); frames(30, 250); }
+  check('time on the menu is not play time', T.usage.sec === before, `${before} -> ${T.usage.sec}`);
+
+  // ---- summary line ----
+  gameAt(BASE, { difficulty: 'hard', breakMin: 0, dailyMin: 0 });
+  p = soloStart();
+  T.stampDisc(p, p.x, p.y, 380, false);
+  frames(3);
+  T.kill(p, null, 'wall');
+  p = soloStart();
+  T.kill(p, null, 'wall');
+  fire('menuBtn:click');
+  openParentViaGate();
+  check('the grown-ups summary shows minutes, rounds and best', /^Today \d+ min \u00b7 2 rounds \u00b7 best [5-9]\.\d\d%$/.test(els.usageLine.textContent), els.usageLine.textContent);
+  check('rounds and best are saved with the usage', storedUsage().rounds === 2 && storedUsage().best > 5, JSON.stringify(storedUsage()));
+  click('parentCloseBtn');
+
+  // ---- bad saved data, reset, layout ----
+  atDay(BASE);
+  boot(Object.assign({}, DEFAULT_STORE, { 'loopfront.usage': JSON.stringify({ day: 'x', sec: -5, extraSec: 'lots' }) }));
+  check('invalid saved usage starts fresh', T.usage.day === BASE && T.usage.sec === 0 && T.usage.extraSec === 0);
+  boot(Object.assign({}, DEFAULT_STORE, { 'loopfront.usage': JSON.stringify({ day: BASE + 400, sec: 50000, extraSec: 0 }) }));
+  check('usage dated far in the future is ignored', T.usage.sec === 0 && T.usage.day === BASE);
+  gameAt(BASE, { difficulty: 'hard', breakMin: 0, dailyMin: 30 });
+  T.usage.sec = 5000;
+  openParentViaGate();
+  click('resetBtn'); click('resetBtn');
+  check('"Reset all progress" does not hand out a fresh day of play', T.usage.sec === 5000);
+  click('parentCloseBtn');
+  check('the grown-ups card scrolls on short screens', /#parentCard\s*\{[^}]*max-height:\s*90vh[^}]*overflow-y:\s*auto/.test(html));
+  check('the done screen exists and starts hidden', /<div id="doneScreen" class="overlay hidden">/.test(html));
 }
 
 
