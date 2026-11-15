@@ -34,7 +34,11 @@
     position: absolute; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between;
     align-items: flex-start; gap: 8px; pointer-events: none;
   }
+  #hudLeft { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
   #hudTop { display: flex; gap: 8px; align-items: stretch; min-width: 0; }
+  #hudExtras { display: flex; gap: 8px; align-items: center; }
+  #heartsPanel { padding: 3px 10px; border-width: 3px; border-radius: 18px; }
+  #heartsPanel canvas { width: 66px; height: 16px; display: block; }
   #pauseBtn {
     pointer-events: auto; width: 62px; padding: 0; border-radius: 20px; background: var(--sun);
     border: 4px solid var(--ink); box-shadow: var(--shadow); display: flex; align-items: center; justify-content: center;
@@ -126,6 +130,9 @@
     background: #fff; border: 3px solid var(--ink);
   }
   #helpText { margin: 10px 0 0; font-size: 16px; opacity: 0.75; }
+  .steerrow { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 0 0 12px; }
+  .steerrow .field { margin: 0; }
+  .steerrow .round.sel { background: var(--sun); }
 
   #ovCreature, #breakCreature { width: 120px; height: 120px; display: block; margin: 0 auto; }
   #ovCause { min-height: 1.3em; opacity: 0.8; }
@@ -169,6 +176,7 @@
   /* narrow screens: counters across the top, leaderboard underneath and right-aligned */
   @media (max-width: 600px) {
     #hudBar { flex-direction: column; align-items: flex-end; gap: 8px; top: 8px; left: 8px; right: 8px; }
+    #hudLeft { width: 100%; gap: 6px; }
     #hudTop { width: 100%; gap: 6px; }
     #pauseBtn { width: 56px; flex: none; border-radius: 18px; }
     #pauseBtn svg { width: 22px; height: 22px; }
@@ -199,13 +207,18 @@
 
 <div id="hud" class="hidden">
   <div id="hudBar">
-    <div id="hudTop">
-      <button id="pauseBtn" type="button" aria-label="Pause">
-        <svg viewBox="0 0 28 28"><rect x="5" y="4" width="6" height="20" rx="2" fill="#2b2d42"/><rect x="17" y="4" width="6" height="20" rx="2" fill="#2b2d42"/></svg>
-      </button>
-      <div class="stat panel"><span class="lbl">Land</span><span class="val" id="statPct">0.00%</span></div>
-      <div class="stat panel"><span class="lbl">Tags</span><span class="val" id="statKills">0</span></div>
-      <div class="stat panel"><span class="lbl">Time</span><span class="val" id="statTime">0:00</span></div>
+    <div id="hudLeft">
+      <div id="hudTop">
+        <button id="pauseBtn" type="button" aria-label="Pause">
+          <svg viewBox="0 0 28 28"><rect x="5" y="4" width="6" height="20" rx="2" fill="#2b2d42"/><rect x="17" y="4" width="6" height="20" rx="2" fill="#2b2d42"/></svg>
+        </button>
+        <div class="stat panel"><span class="lbl">Land</span><span class="val" id="statPct">0.00%</span></div>
+        <div class="stat panel"><span class="lbl">Tags</span><span class="val" id="statKills">0</span></div>
+        <div class="stat panel"><span class="lbl">Time</span><span class="val" id="statTime">0:00</span></div>
+      </div>
+      <div id="hudExtras">
+        <div id="heartsPanel" class="panel" aria-label="Hearts left"><canvas id="heartsCv" width="132" height="32"></canvas></div>
+      </div>
     </div>
     <div id="board" class="panel">
       <h3>Top players</h3>
@@ -227,6 +240,15 @@
       <input id="nick" type="text" maxlength="14" placeholder="Your name" autocomplete="off" spellcheck="false">
       <button id="diceBtn" class="round" type="button" aria-label="Random name">
         <svg viewBox="0 0 32 32"><rect x="3" y="3" width="26" height="26" rx="6" fill="#fff" stroke="#2b2d42" stroke-width="3"/><circle cx="10" cy="10" r="2.6" fill="#2b2d42"/><circle cx="22" cy="10" r="2.6" fill="#2b2d42"/><circle cx="16" cy="16" r="2.6" fill="#2b2d42"/><circle cx="10" cy="22" r="2.6" fill="#2b2d42"/><circle cx="22" cy="22" r="2.6" fill="#2b2d42"/></svg>
+      </button>
+    </div>
+    <div class="steerrow">
+      <span class="field">Steer</span>
+      <button id="steerFinger" class="round" type="button" aria-label="Steer toward your finger">
+        <svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="none" stroke="#2b2d42" stroke-width="3"/><circle cx="16" cy="16" r="4.5" fill="#2b2d42"/></svg>
+      </button>
+      <button id="steerStick" class="round" type="button" aria-label="Steer with a joystick">
+        <svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="none" stroke="#2b2d42" stroke-width="3"/><circle cx="21" cy="12" r="5.5" fill="#ffd23f" stroke="#2b2d42" stroke-width="2.5"/></svg>
       </button>
     </div>
     <button id="playBtn" class="btn" type="button">PLAY</button>
@@ -404,9 +426,9 @@ const FUN_NAMES = [
   'Cosmic Cookie', 'Jelly Bean', 'Ninja Noodle', 'Bubble Boss', 'Sparkle Pants'
 ];
 const DIFFICULTY = {
-  easy:   { bots: 6,  speed: 0.80, aggr: 0,   bounce: true,  shield: 5 },
-  normal: { bots: 8,  speed: 0.92, aggr: 0.6, bounce: false, shield: 3 },
-  hard:   { bots: 10, speed: 1.0,  aggr: 1,   bounce: false, shield: 0 }
+  easy:   { bots: 6,  speed: 0.80, aggr: 0,   bounce: true,  shield: 5, hearts: 3, gentle: true },
+  normal: { bots: 8,  speed: 0.92, aggr: 0.6, bounce: false, shield: 3, hearts: 2, gentle: false },
+  hard:   { bots: 10, speed: 1.0,  aggr: 1,   bounce: false, shield: 0, hearts: 1, gentle: false }
 };
 const RANK_COLORS = ['#ffd23f', '#cfd8dc', '#e0a064'];
 
@@ -754,6 +776,7 @@ function spawnEntity(e) {
   if (!p) return false;
   e.alive = true;
   e.x = e.px = p.x; e.y = e.py = p.y;
+  e.homeX = p.x; e.homeY = p.y;                    // where a lost heart sends the player back to
   e.angle = e.targetAngle = Math.atan2(CENTER - p.y, CENTER - p.x) + rand(-1.3, 1.3);
   clearTrail(e);
   e.kills = 0; e.bornAt = simTime; e.doom = null; e.inOwn = true; e.respawnAt = 0;
@@ -789,6 +812,7 @@ let activeSince = null;     // performance.now() stamp while a round is actively
 let inStep = false;         // true while a simulation step is resolving collisions
 let pendingEnd = null;      // the player's first terminal event of the current step, finalised after the step
 let diff = DIFFICULTY.easy;
+let hearts = 0;             // lives left in the current round (1 = the next mistake ends it)
 
 // Add the wall-clock time since the last stamp to playedSec. Safe to call any number of times:
 // it does nothing when no stamp is set, so duplicate pause/background notifications cannot double-count.
@@ -801,14 +825,15 @@ function accountPlay(keepRunning) {
 let playerName = '';
 const newStars = [];
 const cam = { x: CENTER, y: CENTER, scale: 1 };
-const input = { mode: 'none', left: false, right: false, up: false, down: false, mx: 0, my: 0, ax: 0, ay: 0 };
+const input = { mode: 'none', left: false, right: false, up: false, down: false, mx: 0, my: 0, ax: 0, ay: 0,
+                stickDown: false, ox: 0, oy: 0, sx: 0, sy: 0, heading: null };
 const KEYMAP = {
   arrowleft: 'left', a: 'left', arrowright: 'right', d: 'right',
   arrowup: 'up', w: 'up', arrowdown: 'down', s: 'down'
 };
 function releaseKeys() { input.left = false; input.right = false; input.up = false; input.down = false; }
 
-const settings = { name: '', color: PLAYER_COLORS[0], character: 'cat', sound: true, seenHowTo: false };
+const settings = { name: '', color: PLAYER_COLORS[0], character: 'cat', sound: true, seenHowTo: false, steer: 'finger' };
 const parentCfg = { difficulty: 'easy', breakMin: 30, saver: false, lockUntil: 0 };
 const progress = { best: 0, rounds: 0, stars: {} };
 
@@ -837,6 +862,7 @@ function loadStore() {
     if (CHARACTERS.indexOf(s.character) >= 0) settings.character = s.character;
     if (typeof s.sound === 'boolean') settings.sound = s.sound;
     if (typeof s.seenHowTo === 'boolean') settings.seenHowTo = s.seenHowTo;
+    if (s.steer === 'finger' || s.steer === 'stick') settings.steer = s.steer;
   }
   const p = readJSON('loopfront.parent');
   if (p && typeof p === 'object') {
@@ -894,9 +920,10 @@ function startMatch(withPlayer) {
   }
   bestPct = 0; roundLoops = 0; newStars.length = 0;
   pendingEnd = null; inStep = false;
+  hearts = withPlayer ? diff.hearts : 0;
   spectate = null;
   if (player && player.alive) { cam.x = player.x; cam.y = player.y; }
-  input.mode = 'none'; releaseKeys();
+  input.mode = 'none'; input.stickDown = false; input.heading = null; releaseKeys();
 }
 
 /* =====================================================================
@@ -1022,6 +1049,11 @@ function noteBest(pct) {
    ===================================================================== */
 function kill(e, killer, cause) {
   if (!e.alive) return;
+  // a spare heart turns a mistake into "back home, try again" and keeps all the land
+  if (e.isPlayer && mode === 'playing' && hearts > 1 && cause !== 'swallowed' && cause !== 'win' && counts[e.id] > 0) {
+    loseHeart(e, killer, cause);
+    return;
+  }
   const pct = pctOf(e);
   if (e.isPlayer) noteBest(pct);                   // record the peak before the land disappears
   e.alive = false;
@@ -1061,6 +1093,31 @@ function kill(e, killer, cause) {
     else endGame(pct, killer, cause);
   }
   else e.respawnAt = simTime + rand(2, 4.5);
+}
+
+function loseHeart(e, killer, cause) {
+  hearts--;
+  if (killer && killer !== e) {
+    killer.kills++;                                // the other player still earns the tag
+    if (!killer.isPlayer) addFeed(killer.name + ' tagged you', false);
+  }
+  burst(e.x, e.y, e.rgb, 24, 220);
+  clearTrail(e);
+  // back to the starting spot (or the nearest bit of own land); all land is kept
+  let hx = e.homeX, hy = e.homeY;
+  const hcx = clamp((hx / CELL) | 0, 0, N - 1), hcy = clamp((hy / CELL) | 0, 0, N - 1);
+  if (owner[hcy * N + hcx] !== e.id) {
+    const near = nearestOwn(e);
+    if (near) { hx = near.x; hy = near.y; }
+  }
+  e.x = e.px = hx; e.y = e.py = hy;
+  e.angle = e.targetAngle = Math.atan2(CENTER - hy, CENTER - hx);
+  e.inOwn = true; e.doom = null;
+  e.shieldUntil = simTime + 3;                     // a few safe seconds to get going again
+  input.mode = 'none'; releaseKeys();
+  addFloat(e.x, e.y - 44, 'Oops! ' + hearts + (hearts === 1 ? ' heart left' : ' hearts left'), '#d62828');
+  sfx('oops');
+  updateHearts();
 }
 
 function endGame(pct, killer, cause) {
@@ -1170,6 +1227,15 @@ function nearestOwn(e) {
 function dangerAt(e, x, y) {
   const dx = x - CENTER, dy = y - CENTER, lim = ARENA_R - 40;
   if (dx * dx + dy * dy > lim * lim) return true;
+  // Easy: pals steer around the child's trail instead of wandering across it by accident
+  if (diff.gentle && player && player.alive && e !== player && player.tx.length &&
+      x > player.tminx - 30 && x < player.tmaxx + 30 && y > player.tminy - 30 && y < player.tmaxy + 30) {
+    const ptx = player.tx, pty = player.ty;
+    for (let i = 0; i < ptx.length; i += 2) {
+      const ax = ptx[i] - x, ay = pty[i] - y;
+      if (ax * ax + ay * ay < 900) return true;
+    }
+  }
   const n = e.tx.length;
   if (n > 1) {
     const maxL = e.tl[n - 1] - 75;
@@ -1330,6 +1396,9 @@ function steerPlayer(e, h) {
     // keys are screen directions: hold Left to head toward the left of the screen, and so on
     const kx = (input.right ? 1 : 0) - (input.left ? 1 : 0), ky = (input.down ? 1 : 0) - (input.up ? 1 : 0);
     if (kx || ky) e.angle += clamp(angDiff(e.angle, Math.atan2(ky, kx)), -TURN_PLAYER * h, TURN_PLAYER * h);
+  } else if (input.mode === 'stick') {
+    // joystick: drag anywhere; the heading is kept after the finger lifts
+    if (input.heading !== null) e.angle += clamp(angDiff(e.angle, input.heading), -TURN_PLAYER * h, TURN_PLAYER * h);
   } else if (input.mode === 'mouse') {
     const sx = vw / 2 + (e.x - cam.x) * cam.scale, sy = vh / 2 + (e.y - cam.y) * cam.scale;
     const dx = input.mx - sx, dy = input.my - sy;
@@ -1727,6 +1796,18 @@ function render(now) {
     ctx.fillText(f.text, f.x, f.y);
   }
   ctx.globalAlpha = 1;
+
+  // joystick: a ring where the finger landed and a knob that follows it
+  if (input.stickDown && mode === 'playing') {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const dx = input.sx - input.ox, dy = input.sy - input.oy, d = Math.hypot(dx, dy) || 1, k = Math.min(1, 30 / d);
+    ctx.lineWidth = 8; ctx.strokeStyle = INK;
+    ctx.beginPath(); ctx.arc(input.ox, input.oy, 30, 0, TAU); ctx.stroke();
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath(); ctx.arc(input.ox, input.oy, 30, 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(input.ox + dx * k, input.oy + dy * k, 13, 0, TAU);
+    ctx.fillStyle = '#ffd23f'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.stroke();
+  }
 }
 
 function drawMinimap() {
@@ -1813,6 +1894,28 @@ function setRow(row, e, rank, leaderCount, extraClass) {
   row.pct.textContent = pctOf(e).toFixed(2) + '%';
   row.bar.style.background = e.hex;
   row.bar.style.width = (leaderCount > 0 ? Math.max(4, counts[e.id] / leaderCount * 90) : 0) + '%';
+}
+
+function drawHeart(c, cx, cy, s, filled) {
+  c.beginPath();
+  c.moveTo(cx, cy + s * 0.95);
+  c.bezierCurveTo(cx - s * 1.5, cy + s * 0.1, cx - s * 1.0, cy - s * 1.0, cx, cy - s * 0.35);
+  c.bezierCurveTo(cx + s * 1.0, cy - s * 1.0, cx + s * 1.5, cy + s * 0.1, cx, cy + s * 0.95);
+  c.closePath();
+  c.lineJoin = 'round'; c.lineWidth = 3;
+  c.fillStyle = filled ? '#ef476f' : '#e3e6ee';
+  c.strokeStyle = filled ? INK : '#b8bdcc';
+  c.fill(); c.stroke();
+}
+
+// One heart per life: red while left, grey once lost. Hidden on levels with a single life.
+function updateHearts() {
+  const panel = $('heartsPanel');
+  toggleClass(panel, 'hidden', !player || diff.hearts <= 1);
+  if (diff.hearts <= 1) return;
+  const g = $('heartsCv').getContext('2d');
+  g.clearRect(0, 0, 132, 32);
+  for (let i = 0; i < diff.hearts; i++) drawHeart(g, 18 + i * 42, 16, 11, i < hearts);
 }
 
 function updateHud() {
@@ -1915,6 +2018,15 @@ function setAwake(on) {
 }
 
 function refreshBest() { $('bestLabel').textContent = 'Best: ' + progress.best.toFixed(2) + '%'; }
+const isTouchy = () => !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+function refreshSteer() {
+  toggleClass($('steerFinger'), 'sel', settings.steer === 'finger');
+  toggleClass($('steerStick'), 'sel', settings.steer === 'stick');
+  $('helpText').textContent = settings.steer === 'stick'
+    ? 'Drag anywhere like a joystick!'
+    : (isTouchy() ? 'Hold your finger where you want to go!' : 'Use the mouse or arrow keys. Leave your land, draw a loop, come back home!');
+}
+function setSteer(v) { settings.steer = v; input.stickDown = false; saveSettings(); refreshSteer(); }
 function refreshSound() { toggleClass($('soundBtn'), 'muted', !settings.sound); }
 
 function startGame() {
@@ -1932,6 +2044,7 @@ function startGame() {
   show(hud);
   hudAcc = 1;
   updateHud();
+  updateHearts();
   setAwake(true);
   wake();
   startLoop();
@@ -2206,6 +2319,8 @@ $('howOkBtn').addEventListener('click', () => {
 });
 $('starsBtn').addEventListener('click', openStars);
 $('starsCloseBtn').addEventListener('click', () => hide(starsScreen));
+$('steerFinger').addEventListener('click', () => setSteer('finger'));
+$('steerStick').addEventListener('click', () => setSteer('stick'));
 $('soundBtn').addEventListener('click', () => { settings.sound = !settings.sound; saveSettings(); refreshSound(); });
 $('pauseBtn').addEventListener('click', pauseRound);
 $('resumeBtn').addEventListener('click', resumeRound);
@@ -2269,8 +2384,25 @@ window.addEventListener('keyup', ev => {
 });
 window.addEventListener('blur', releaseKeys);
 
+const onControl = ev => !!(ev.target && ev.target.closest && ev.target.closest('button, .overlay'));   // taps on buttons do not steer
+
+function stickDown(ev) {
+  if (onControl(ev)) return;
+  input.stickDown = true;
+  input.ox = input.sx = ev.clientX; input.oy = input.sy = ev.clientY;
+  input.mode = 'stick';
+}
+function stickMove(ev) {
+  if (!input.stickDown) return;
+  input.sx = ev.clientX; input.sy = ev.clientY;
+  const dx = input.sx - input.ox, dy = input.sy - input.oy;
+  if (dx * dx + dy * dy > 196) input.heading = Math.atan2(dy, dx);      // beyond 14 px from where the finger landed
+}
+function stickUp() { input.stickDown = false; }                          // the last heading is kept
+
 function pointer(ev) {
-  if (ev.target && ev.target.closest && ev.target.closest('button, .overlay')) return;   // taps on buttons do not steer
+  if (onControl(ev)) return;
+  if (settings.steer === 'stick') return;                                // handled by stickDown / stickMove
   input.mx = ev.clientX; input.my = ev.clientY;
   if (input.mode === 'keys') {
     // ignore tiny mouse jitter while steering with the keyboard
@@ -2279,8 +2411,10 @@ function pointer(ev) {
   }
   input.mode = 'mouse';
 }
-window.addEventListener('pointermove', ev => { lastInputAt = performance.now(); if (wantLoop()) startLoop(); pointer(ev); });
-window.addEventListener('pointerdown', ev => { ensureAudio(); lastInputAt = performance.now(); if (wantLoop()) startLoop(); pointer(ev); });
+window.addEventListener('pointermove', ev => { lastInputAt = performance.now(); if (wantLoop()) startLoop(); if (settings.steer === 'stick') stickMove(ev); else pointer(ev); });
+window.addEventListener('pointerdown', ev => { ensureAudio(); lastInputAt = performance.now(); if (wantLoop()) startLoop(); if (settings.steer === 'stick') stickDown(ev); else pointer(ev); });
+window.addEventListener('pointerup', stickUp);
+window.addEventListener('pointercancel', stickUp);
 window.addEventListener('click', ev => {
   if (ev.target && ev.target.closest && ev.target.closest('button')) sfx('tap');
 });
@@ -2317,9 +2451,7 @@ buildCharacters();
 refreshChars();
 refreshSound();
 refreshBest();
-if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
-  $('helpText').textContent = 'Hold your finger where you want to go!';
-}
+refreshSteer();
 resize();
 startMatch(false);
 cam.scale = Math.sqrt(vw * vh) / 1050 * 0.78;

@@ -32,13 +32,15 @@ for (const [w, h] of SIZES) {
         stats: stats.map(box),
         statOverflow: stats.map((s) => [...s.querySelectorAll('.val, .lbl')].some((v) => v.scrollWidth > v.clientWidth + 1)),
         top: box(document.getElementById('hudTop')),
+        hearts: (() => { const el = document.getElementById('heartsPanel'); return el.offsetParent ? box(el) : null; })(),
         board: box(document.getElementById('board')),
         boardOverflow: [...document.querySelectorAll('#boardList li')].some((li) => li.scrollWidth > li.clientWidth + 1 && getComputedStyle(li).overflow === 'visible'),
         docOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
       };
     }, { w });
 
-    const parts = [m.pause, ...m.stats];
+    expect(m.hearts).not.toBeNull();            // Easy is the default: hearts are shown
+    const parts = [m.pause, ...m.stats, m.hearts];
     for (const p of parts) {
       expect(p.x).toBeGreaterThanOrEqual(0);
       expect(p.x + p.width).toBeLessThanOrEqual(m.vw + 0.5);
@@ -50,6 +52,7 @@ for (const [w, h] of SIZES) {
     for (const p of parts) expect(overlap(p, m.board)).toBe(false);
     for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) expect(overlap(parts[i], parts[j])).toBe(false);
 
+    expect(m.hearts.y).toBeGreaterThanOrEqual(m.top.y + m.top.height);   // hearts sit under the counters
     if (w <= 600) {
       // narrow: leaderboard sits under the counters, right-aligned, 8 px gap
       expect(m.board.y).toBeGreaterThanOrEqual(m.top.y + m.top.height + 6);
