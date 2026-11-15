@@ -6,33 +6,145 @@ on:
     paths:
       - 'web/**'
       - 'android/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'playwright.config.js'
+      - '.github/workflows/build-apk.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'android/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'playwright.config.js'
       - '.github/workflows/build-apk.yml'
   workflow_dispatch:
 
-concurrency:
-  group: build-apk
-  cancel-in-progress: true
-
+# Read-only by default. Only the release job below is granted write access.
 permissions:
-  contents: write
+  contents: read
+
+# One run per pull request or branch. A pull request run can never cancel a release on main,
+# and a release run is never cancelled half-way.
+concurrency:
+  group: build-apk-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
+  web:
+    name: Web validation
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked development dependencies
+        run: npm ci
+
+      - name: Headless harness
+        run: node tests/harness.js web/index.html
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser tests
+        run: npx playwright test
+
+      - name: Upload browser report and screenshots
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: web-test-report
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  android:
+    name: Android validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: '8.7'
+
+      - name: Point Gradle at the Android SDK
+        run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+
+      # No production signing secrets here: this APK is debug-signed, only proves the project builds,
+      # and is never uploaded or published.
+      - name: Release lint and validation APK
+        working-directory: android
+        run: gradle --no-daemon lintRelease assembleRelease
+
+      - name: Upload lint reports
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: android-lint-reports
+          path: android/app/build/reports
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release:
+    name: Signed release
+    needs: [web, android]
+    # Only a successful run on main (push or manual) may publish; pull requests never get here.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Is there anything new to release?
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          skip=false
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            latest=$(gh api "repos/$REPO/releases/latest" --jq .target_commitish 2>/dev/null || true)
+            if [ "$latest" = "$GITHUB_SHA" ]; then
+              skip=true
+              echo "Nothing new to release: $GITHUB_SHA already has a release."
+            fi
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v5
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v5
+        if: steps.gate.outputs.skip != 'true'
         with:
           gradle-version: '8.7'
 
       - name: Decode signing key
+        if: steps.gate.outputs.skip != 'true'
         env:
           KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
         run: |
@@ -43,9 +155,11 @@ jobs:
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
 
       - name: Point Gradle at the Android SDK
+        if: steps.gate.outputs.skip != 'true'
         run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
-      - name: Build release APK
+      - name: Build signed release APK
+        if: steps.gate.outputs.skip != 'true'
         working-directory: android
         env:
           VERSION_CODE: ${{ github.run_number }}
@@ -55,12 +169,31 @@ jobs:
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: gradle --no-daemon assembleRelease
 
+      - name: Verify the signed APK before publishing
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apksigner.txt"
+          grep -q "CN=Loopfront" "$RUNNER_TEMP/apksigner.txt" || { echo "::error::APK is not signed with the Loopfront release key"; exit 1; }
+          "$BT/aapt" dump badging "$APK" | head -1 | tee "$RUNNER_TEMP/badging.txt"
+          grep -q "package: name='com.loopfront.game'" "$RUNNER_TEMP/badging.txt" || { echo "::error::Unexpected application id"; exit 1; }
+          grep -q "versionCode='$RUN_NUMBER'" "$RUNNER_TEMP/badging.txt" || { echo "::error::Version code is not $RUN_NUMBER"; exit 1; }
+          unzip -p "$APK" assets/index.html | cmp - web/index.html || { echo "::error::Bundled page differs from web/index.html"; exit 1; }
+          echo "Signed APK verified: certificate, id, version $RUN_NUMBER, bundled page identical."
+
       - name: Publish release
+        if: steps.gate.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
           cp android/app/build/outputs/apk/release/app-release.apk loopfront.apk
-          gh release create "v${{ github.run_number }}" loopfront.apk \
-            --title "Loopfront v${{ github.run_number }}" \
-            --notes "Automated build ${{ github.run_number }} from commit ${GITHUB_SHA::7}." \
+          SUBJECT=$(git log -1 --pretty=%s)
+          gh release create "v$RUN_NUMBER" loopfront.apk \
+            --target "$GITHUB_SHA" \
+            --title "Loopfront v$RUN_NUMBER" \
+            --notes "$SUBJECT" \
             --latest
