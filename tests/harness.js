@@ -17,7 +17,8 @@ src = src.slice(0, tail) + `globalThis.__T = { entities, owner, counts, inArena,
   get playedSec(){return playedSec}, set playedSec(v){playedSec=v},
   get newStars(){return newStars}, get roundLoops(){return roundLoops},
   capture, addTrailPoint, stampDisc, kill, startMatch, step, pctOf, breakTick,
-  get pendingEnd(){return pendingEnd}, get bestPct(){return bestPct} };\n` + src.slice(tail);
+  get pendingEnd(){return pendingEnd}, get bestPct(){return bestPct},
+  get hearts(){return hearts}, set hearts(v){hearts=v} };\n` + src.slice(tail);
 
 // ---- elements that start hidden in the HTML ----
 const seed = {};
@@ -408,7 +409,7 @@ function placeOnTrail(bot, p, name) {
   frames(60 * 6);
   placeOnTrail(T.entities[5], p, 'Late');
   frames(30);
-  check('easy: after the shield an enemy crossing the trail ends the round', T.mode === 'over', `simTime=${T.simTime.toFixed(1)} ${els.ovCause.textContent}`);
+  check('easy: after the shield an enemy crossing the trail costs a heart, not the round', T.mode === 'playing' && T.hearts === 2, `simTime=${T.simTime.toFixed(1)} hearts=${T.hearts}`);
   T.parentCfg.difficulty = 'hard';
 }
 
@@ -516,6 +517,8 @@ function placeOnTrail(bot, p, name) {
   // a round is never interrupted mid-play
   T.parentCfg.breakMin = 15;
   T.playedSec = 5000;
+  for (const e of T.entities) if (!e.isPlayer && e.alive) T.kill(e, null, 'wall');   // keep the 2 s fully predictable
+  T.player.x = T.player.px = T.CENTER; T.player.y = T.player.py = T.CENTER;
   frames(120);
   check('a round in progress is never interrupted', T.mode === 'playing' && hasClass('breakScreen', 'hidden'));
   T.parentCfg.breakMin = 0;
@@ -833,6 +836,7 @@ function bigLand() {
   click('pauseBtn');
   check('crossing the threshold does not interrupt the round', T.playedSec >= 900 && T.mode === 'playing' && hasClass('breakScreen', 'hidden'), `played=${T.playedSec.toFixed(1)}`);
   click('resumeBtn');
+  T.hearts = 1;                                    // Easy has spare hearts; use the last one so the round ends
   T.kill(p, null, 'wall');
   const idleStart = T.playedSec;
   fakeNow += 30000;
@@ -896,6 +900,7 @@ function bigLand() {
   frames(120);
   T.stampDisc(T.player, T.player.x, T.player.y, 300, false);
   frames(3);
+  T.hearts = 1;
   T.kill(T.player, null, 'wall');
   check('results render with blocked storage', T.mode === 'over' && els.ovTitle.textContent === 'Oops!' && /%$/.test(els.ovPct.textContent), els.ovPct.textContent);
   check('the in-memory record still updates', T.progress.best > 3, `best=${T.progress.best}`);
@@ -942,6 +947,129 @@ function bigLand() {
   check('no notes when already up to date', els.updateNotes.textContent === '');
   delete globalThis.LoopfrontApp;
 }
+
+// =====================================================================
+// 15. WP1: hearts, careful pals, joystick
+// =====================================================================
+// ---- hearts ----
+{
+  freshGame({ difficulty: 'easy', breakMin: 0 });
+  let p = soloStart();
+  check('easy: three hearts, heart panel visible', T.hearts === 3 && !hasClass('heartsPanel', 'hidden'), `hearts=${T.hearts}`);
+  frames(60 * 6);                                   // protection over, a trail behind the player
+  const landBefore = T.counts[p.id];
+  const bot = T.entities[5];
+  placeOnTrail(bot, p, 'Cutter');
+  frames(1);
+  check('easy: a trail crossing costs one heart and the round goes on', T.mode === 'playing' && T.hearts === 2, `hearts=${T.hearts} mode=${T.mode}`);
+  check('easy: the land is kept after losing a heart', T.counts[p.id] >= landBefore && T.counts[p.id] > 0, `${T.counts[p.id]} vs ${landBefore}`);
+  check('easy: the player is back at the start with a clear trail', p.tx.length === 0 && Math.hypot(p.x - p.homeX, p.y - p.homeY) < 20, `dist=${Math.hypot(p.x - p.homeX, p.y - p.homeY).toFixed(1)}`);
+  check('easy: a few safe seconds after a lost heart', p.shieldUntil > T.simTime + 2, `shield left=${(p.shieldUntil - T.simTime).toFixed(1)}`);
+  check('easy: the other player still earns the tag', bot.kills === 1, `kills=${bot.kills}`);
+  invariants('after a lost heart');
+
+  frames(60 * 4);
+  placeOnTrail(T.entities[5], p, 'Cutter2');
+  frames(1);
+  check('easy: the second mistake costs the second heart', T.mode === 'playing' && T.hearts === 1, `hearts=${T.hearts}`);
+  frames(60 * 4);
+  placeOnTrail(T.entities[5], p, 'Cutter3');
+  frames(1);
+  check('easy: the third mistake ends the round', T.mode === 'over', `mode=${T.mode} hearts=${T.hearts}`);
+
+  p = soloStart();
+  T.kill(p, T.entities[5], 'swallowed');
+  check('losing all land always ends the round, hearts or not', T.mode === 'over');
+
+  freshGame({ difficulty: 'normal', breakMin: 0 });
+  p = soloStart();
+  check('normal: two hearts', T.hearts === 2 && !hasClass('heartsPanel', 'hidden'));
+
+  freshGame({ difficulty: 'hard', breakMin: 0 });
+  p = soloStart();
+  check('hard: a single life and no heart panel', T.hearts === 1 && hasClass('heartsPanel', 'hidden'));
+  frames(60 * 2);
+  T.kill(p, null, 'self');
+  check('hard: the first mistake still ends the round', T.mode === 'over');
+}
+
+// ---- careful pals on easy ----
+{
+  const realRandom = Math.random;
+  const mulberry32 = (a) => () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  let hit = 0;
+  const detail = [];
+  for (let seed = 1; seed <= 10; seed++) {
+    Math.random = mulberry32(seed * 7919);
+    freshGame({ difficulty: 'easy', breakMin: 0 });
+    click('againBtn');
+    const p = T.player;
+    // park the child outside own land with a long trail across the middle of the island
+    const sx = T.CENTER - 150, sy = T.CENTER + (seed % 3) * 90 - 90;
+    p.x = p.px = sx + 600; p.y = p.py = sy; p.speed = 0; p.shieldUntil = 0;
+    for (let k = 0; k <= 100; k++) T.addTrailPoint(p, sx + k * 6, sy);
+    for (let f = 0; f < 60 * 90 && T.mode === 'playing' && T.hearts === 3; f++) { if (f % 600 === 0) poke(); frames(1); }
+    // only trail crossings count here: a pal closing a loop around the whole home patch is a different rule
+    const lost = T.hearts < 3 || (T.mode !== 'playing' && !/took all your land/.test(els.ovCause.textContent));
+    if (lost) hit++;
+    detail.push(lost ? 'x' : '.');
+  }
+  Math.random = realRandom;
+  check('easy: pals steer around the child\'s trail (at least 9 of 10 runs untouched)', hit <= 1, `runs touched: ${hit}/10 ${detail.join('')}`);
+}
+
+// ---- joystick ----
+{
+  freshGame({ difficulty: 'hard', breakMin: 0 });
+  click('steerStick');
+  check('joystick choice is shown and saved', hasClass('steerStick', 'sel') && !hasClass('steerFinger', 'sel') && JSON.parse(localStorage._d['loopfront.settings']).steer === 'stick');
+  check('joystick help text', /joystick/i.test(els.helpText.textContent), els.helpText.textContent);
+  const down = (x, y, target) => fire('window:pointerdown', { clientX: x, clientY: y, target: target || null });
+  const move = (x, y) => fire('window:pointermove', { clientX: x, clientY: y });
+  const up = () => fire('window:pointerup', {});
+  let bad = 0;
+  for (const [dx, dy, axis, sign, name] of [[90, 0, 'x', 1, 'right'], [-90, 0, 'x', -1, 'left'], [0, -90, 'y', -1, 'up'], [0, 90, 'y', 1, 'down']]) {
+    const p = soloStart();
+    p.x = p.px = T.CENTER; p.y = p.py = T.CENTER; p.angle = 2.2;
+    down(400, 400); move(400 + dx, 400 + dy);
+    frames(80);
+    const pos0 = p[axis]; frames(10);
+    const dragging = T.input.stickDown === true;
+    up();
+    const stopped = T.input.stickDown === false;
+    const pos1 = p[axis]; frames(40);
+    if (!(p.alive && Math.sign(pos0 - T.CENTER) === sign && Math.sign(p[axis] - pos1) === sign && dragging && stopped)) { bad++; check('stick drag ' + name, false, `axis=${axis} moved=${(pos0 - T.CENTER).toFixed(0)} keeps=${(p[axis] - pos1).toFixed(0)}`); }
+  }
+  check('dragging anywhere steers toward that side and the heading is kept after letting go', bad === 0);
+
+  let p = soloStart();
+  p.x = p.px = T.CENTER; p.y = p.py = T.CENTER; p.angle = 1;
+  down(300, 300); move(305, 303);
+  frames(30);
+  check('a tiny wobble (under 14 px) does not steer', Math.abs(p.angle - 1) < 0.001, `angle=${p.angle.toFixed(3)}`);
+  up();
+
+  p = soloStart();
+  p.x = p.px = T.CENTER; p.y = p.py = T.CENTER; p.angle = 1;
+  down(300, 300, { closest: () => ({}) }); move(500, 300);
+  check('taps on buttons do not start a joystick', T.input.stickDown === false);
+
+  click('steerFinger');
+  check('back to finger steering', hasClass('steerFinger', 'sel') && JSON.parse(localStorage._d['loopfront.settings']).steer === 'finger');
+  p = soloStart();
+  p.x = p.px = T.CENTER; p.y = p.py = T.CENTER; p.angle = 1; T.cam.x = p.x; T.cam.y = p.y;
+  fire('window:pointermove', { clientX: 100, clientY: 400 });
+  frames(80); const x0 = p.x; frames(10);
+  check('finger mode still follows the pointer', p.alive && p.x < x0);
+
+  boot(localStorage._d);
+  check('joystick choice survives a restart', true && JSON.parse(localStorage._d['loopfront.settings']).steer === 'finger');
+  boot(Object.assign({}, DEFAULT_STORE, { 'loopfront.settings': JSON.stringify({ name: '', color: '#ef476f', character: 'cat', sound: true, seenHowTo: true, steer: 'stick' }) }));
+  check('a saved joystick choice is restored', T.settings.steer === 'stick' && hasClass('steerStick', 'sel'));
+  boot(Object.assign({}, DEFAULT_STORE, { 'loopfront.settings': JSON.stringify({ steer: 'banana', seenHowTo: true }) }));
+  check('an invalid saved steering value falls back to finger', T.settings.steer === 'finger');
+}
+
 
 // ---- J and E: static structure ----
 check('page-level network block is present', /http-equiv="Content-Security-Policy"[^>]*connect-src 'none'/.test(html));

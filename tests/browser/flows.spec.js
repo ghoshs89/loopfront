@@ -54,3 +54,39 @@ test('grown-ups gate: a wrong answer keeps settings closed, the right one opens 
   await type(Number(q2[1]) * Number(q2[2]));
   await expect(page.locator('#parentScreen')).toBeVisible();
 });
+
+test('hearts: shown on Easy, hidden on Hard', async ({ page }) => {
+  await seen(page);
+  await open(page);
+  await page.locator('#playBtn').click();
+  await expect(page.locator('#heartsPanel')).toBeVisible();
+});
+
+test('hearts are hidden on Hard', async ({ page }) => {
+  await seen(page, { hard: true });
+  await open(page);
+  await page.locator('#playBtn').click();
+  await expect(page.locator('#hud')).toBeVisible();
+  await expect(page.locator('#heartsPanel')).toBeHidden();
+});
+
+test('joystick: choose it, drag, and the round keeps running without errors', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  await seen(page);
+  await open(page);
+  await page.locator('#steerStick').click();
+  await expect(page.locator('#steerStick')).toHaveClass(/sel/);
+  await expect(page.locator('#helpText')).toContainText('joystick');
+  await page.locator('#playBtn').click();
+  await expect(page.locator('#hud')).toBeVisible();
+  await page.mouse.move(500, 400);
+  await page.mouse.down();
+  await page.mouse.move(650, 400, { steps: 6 });
+  await page.waitForTimeout(800);
+  await page.mouse.up();
+  await page.waitForTimeout(500);
+  await expect(page.locator('#hud')).toBeVisible();
+  expect(errors).toEqual([]);
+});

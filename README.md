@@ -9,7 +9,7 @@ GitHub Actions workflow builds the APK for you.
 
 ## How to play
 
-- Hold a finger (or the mouse) where you want to go. On a keyboard, W A S D or the arrow keys point you toward that side of the screen.
+- Hold a finger (or the mouse) where you want to go, or switch to a joystick on the start screen (drag anywhere; the character stays visible). On a keyboard, W A S D or the arrow keys point you toward that side of the screen.
 - Your land is your safe place. Leave it and you draw a trail; loop back home and everything inside the loop becomes yours.
 - Crossing another player's trail takes them out. Crossing your own trail takes you out. Bumping head-on takes out whoever is not standing on their own land (both, if neither is).
 - Easy mode gives a bouncy island edge and a few seconds of protection at the start. Earn stars for owning more of the island, tagging pals, playing for two minutes and drawing loops.
@@ -31,7 +31,7 @@ locks for a minute after three wrong answers. Inside you can:
 
 | Setting | What it does |
 |---|---|
-| Difficulty | Easy (default): 6 slower pals that never chase you, a bouncy island edge and 5 seconds of protection at the start. Normal and Hard bring more and faster pals that can chase. |
+| Difficulty | Easy (default): 3 hearts (a mistake costs a heart and sends you home with your land kept), 6 slower pals that never chase you and steer around your trail, a bouncy island edge and 5 seconds of protection at the start. Normal: 2 hearts, more and faster pals that can chase. Hard: one life. |
 | Break reminder | After 15, 30 (default) or 45 minutes of actual play (menus, pauses, results and time in the background do not count) a "Time for a stretch!" screen appears between rounds. It is never shown in the middle of a round. |
 | Battery saver | Draws 30 frames per second instead of 60. Game speed does not change. |
 | Check for updates | The only feature that uses the internet. It runs only when you tap it. |
