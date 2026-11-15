@@ -18,7 +18,9 @@ src = src.slice(0, tail) + `globalThis.__T = { entities, owner, counts, inArena,
   get newStars(){return newStars}, get roundLoops(){return roundLoops},
   capture, addTrailPoint, stampDisc, kill, startMatch, step, pctOf, breakTick,
   get pendingEnd(){return pendingEnd}, get bestPct(){return bestPct},
-  get hearts(){return hearts}, set hearts(v){hearts=v} };\n` + src.slice(tail);
+  get hearts(){return hearts}, set hearts(v){hearts=v},
+  pickups, get nextPickupAt(){return nextPickupAt}, get zoomUntil(){return zoomUntil}, get bubbleUntil(){return bubbleUntil},
+  get freezeUntil(){return freezeUntil}, get roundPower(){return roundPower} };\n` + src.slice(tail);
 
 // ---- elements that start hidden in the HTML ----
 const seed = {};
@@ -663,6 +665,7 @@ function openSpot() {
 }
 function placeBot(bot, name, x, y, angle) {
   bot.alive = true; bot.isPlayer = false; bot.name = name; bot.kills = 0; bot.respawnAt = 1e9;
+  bot.tx.length = 0; bot.ty.length = 0; bot.tl.length = 0;      // a relocated pal must not hit its own old trail
   bot.bx0 = T.N; bot.by0 = T.N; bot.bx1 = -1; bot.by1 = -1;
   bot.x = bot.px = x; bot.y = bot.py = y; bot.angle = bot.targetAngle = angle;
   T.stampDisc(bot, T.CENTER + 30, T.CENTER + 30, 20, false);
@@ -1068,6 +1071,102 @@ function bigLand() {
   check('a saved joystick choice is restored', T.settings.steer === 'stick' && hasClass('steerStick', 'sel'));
   boot(Object.assign({}, DEFAULT_STORE, { 'loopfront.settings': JSON.stringify({ steer: 'banana', seenHowTo: true }) }));
   check('an invalid saved steering value falls back to finger', T.settings.steer === 'finger');
+}
+
+
+// =====================================================================
+// 16. WP2: power-ups
+// =====================================================================
+{
+  const travel = (ent, n) => { const x0 = ent.x, y0 = ent.y; frames(n); return Math.hypot(ent.x - x0, ent.y - y0); };
+  const giveTo = (p, type) => { T.pickups.length = 0; T.pickups.push({ x: p.x, y: p.y, type, born: T.simTime }); T.step(1 / 60); };
+
+  // spawning: timing, cap, placement, lifetime (the player is parked so it cannot collect anything)
+  freshGame({ difficulty: 'easy', breakMin: 0 });
+  let p = bigLand();
+  p.speed = 0;
+  check('no power-ups at the start of a round', T.pickups.length === 0);
+  let maxSeen = 0, firstAt = -1, outside = 0, tooOld = 0;
+  const types = new Set();
+  for (let f = 0; f < 60 * 200 && T.mode === 'playing'; f++) {
+    if (f % 300 === 0) poke();
+    frames(1);
+    maxSeen = Math.max(maxSeen, T.pickups.length);
+    if (firstAt < 0 && T.pickups.length > 0) firstAt = T.simTime;
+    for (const pu of T.pickups) {
+      types.add(pu.type);
+      if (Math.hypot(pu.x - T.CENTER, pu.y - T.CENTER) > T.ARENA_R - 160 + 1) outside++;
+      if (T.simTime - pu.born > 25.1) tooOld++;
+    }
+  }
+  check('easy: the first power-up appears after 8 to 16 seconds', firstAt >= 8 && firstAt <= 16, `first at ${firstAt.toFixed(1)} s`);
+  check('never more than three on the island, and several do appear', maxSeen <= 3 && maxSeen >= 2, `max=${maxSeen}`);
+  check('power-ups always stay inside the island', outside === 0, `${outside} outside`);
+  check('power-ups fade away after 25 seconds', tooOld === 0, `${tooOld} too old`);
+  check('more than one kind of power-up appears', types.size >= 2, [...types].join(','));
+
+  // effects
+  freshGame({ difficulty: 'easy', breakMin: 0 });
+  p = bigLand();
+  p.angle = 0;
+  p.x = p.px = T.CENTER - 300; p.y = p.py = T.CENTER;
+  const base = travel(p, 60);
+  p.x = p.px = T.CENTER - 300; p.y = p.py = T.CENTER; p.angle = 0;
+  giveTo(p, 'zoom');
+  check('collecting Zoom sets its timer, counts it and removes the pick-up', T.zoomUntil > T.simTime + 4.8 && T.zoomUntil <= T.simTime + 5.01 && T.roundPower === 1 && T.pickups.length === 0, `left=${(T.zoomUntil - T.simTime).toFixed(2)}`);
+  p.x = p.px = T.CENTER - 300; p.y = p.py = T.CENTER; p.angle = 0;
+  const fast = travel(p, 60);
+  check('Zoom makes the player about 35% faster', fast / base > 1.3 && fast / base < 1.4, `ratio=${(fast / base).toFixed(2)}`);
+  frames(60);
+  check('the power-up pill shows Zoom', !hasClass('powerPill', 'hidden') && els.powerName.textContent === 'Zoom', els.powerName.textContent);
+  frames(60 * 5);
+  p.x = p.px = T.CENTER - 300; p.y = p.py = T.CENTER; p.angle = 0;
+  const after = travel(p, 60);
+  check('Zoom wears off', Math.abs(after / base - 1) < 0.05 && T.simTime > T.zoomUntil, `ratio=${(after / base).toFixed(2)}`);
+  frames(30);
+  check('the pill disappears when nothing is active', hasClass('powerPill', 'hidden'));
+
+  giveTo(p, 'bubble');
+  check('Bubble gives the start-of-round shield for 6 seconds', p.shieldUntil >= T.simTime + 5.9 && T.bubbleUntil >= T.simTime + 5.9, `shield left=${(p.shieldUntil - T.simTime).toFixed(2)}`);
+
+  const s = { x: T.CENTER + 500, y: T.CENTER + 100 };   // inside the player's big patch of land; the pal just walks
+  const pal = T.entities[5];
+  placeBot(pal, 'Chilly', s.x, s.y, Math.atan2(T.CENTER - s.y, T.CENTER - s.x));
+  const palBase = travel(pal, 60);
+  placeBot(pal, 'Chilly', s.x, s.y, Math.atan2(T.CENTER - s.y, T.CENTER - s.x));
+  giveTo(p, 'freeze');
+  check('collecting Freeze sets its timer', T.freezeUntil > T.simTime + 4.8, `left=${(T.freezeUntil - T.simTime).toFixed(2)}`);
+  const palSlow = travel(pal, 60);
+  check('Freeze slows pals to under half speed', palSlow / palBase > 0.4 && palSlow / palBase < 0.5, `ratio=${(palSlow / palBase).toFixed(2)}`);
+  frames(60 * 5);
+  placeBot(pal, 'Chilly', s.x, s.y, Math.atan2(T.CENTER - s.y, T.CENTER - s.x));
+  const palAfter = travel(pal, 60);
+  check('Freeze wears off', Math.abs(palAfter / palBase - 1) < 0.05, `ratio=${(palAfter / palBase).toFixed(2)}`);
+
+  // pals never collect
+  placeBot(pal, 'Greedy', s.x, s.y, 0);
+  T.pickups.length = 0;
+  T.pickups.push({ x: pal.x, y: pal.y, type: 'zoom', born: T.simTime });
+  frames(3);
+  check('pals never collect power-ups', T.pickups.length === 1);
+  T.pickups.length = 0;
+
+  // star
+  freshGame({ difficulty: 'easy', breakMin: 0 });
+  p = bigLand();
+  for (let i = 0; i < 5; i++) giveTo(p, 'zoom');
+  frames(5);
+  check('five power-ups in a round earn the star once', T.progress.stars.power5 === true && T.newStars.filter(g => g.id === 'power5').length === 1 && JSON.parse(localStorage._d['loopfront.progress']).stars.power5 === true);
+  click('starsBtn');
+  check('stars screen lists every goal including power-ups', els.starsGrid.children.length === T.GOALS.length && T.GOALS.some(g => g.id === 'power5'), `${els.starsGrid.children.length}/${T.GOALS.length}`);
+  click('starsCloseBtn');
+
+  // a new round starts clean; the menu never spawns any
+  click('againBtn');
+  check('a new round starts with no power-ups and no effects', T.pickups.length === 0 && T.zoomUntil === 0 && T.freezeUntil === 0 && T.roundPower === 0);
+  fire('menuBtn:click');
+  for (let f = 0; f < 60 * 40; f++) { if (f % 300 === 0) poke(); frames(1); }
+  check('no power-ups appear behind the menu', T.pickups.length === 0 && T.mode === 'menu');
 }
 
 
