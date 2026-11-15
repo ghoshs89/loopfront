@@ -1,0 +1,54 @@
+plugins {
+    id 'com.android.application'
+}
+
+def vCode = (System.getenv('VERSION_CODE') ?: '1') as Integer
+def ksFile = System.getenv('SIGNING_STORE_FILE')
+
+android {
+    namespace 'com.loopfront.game'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.loopfront.game'
+        minSdk 26
+        targetSdk 34
+        versionCode vCode
+        versionName "1.${vCode}"
+    }
+
+    signingConfigs {
+        release {
+            if (ksFile) {
+                storeFile file(ksFile)
+                storePassword System.getenv('SIGNING_STORE_PASSWORD')
+                keyAlias System.getenv('SIGNING_KEY_ALIAS')
+                keyPassword System.getenv('SIGNING_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig ksFile ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    // the game is bundled straight from /web so there is only one copy in the repo
+    sourceSets {
+        main { assets.srcDirs = ['../../web'] }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures { buildConfig true }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}

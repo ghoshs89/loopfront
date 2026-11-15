@@ -1,0 +1,639 @@
+// Headless test harness for web/index.html.   Run:  node tests/harness.js web/index.html
+// It evaluates the game's script against stub DOM / canvas objects and checks rules, UI flow,
+// battery behaviour and the offline/safety properties. Exit code is non-zero on any failure.
+const fs = require('fs');
+const { execFileSync } = require('child_process');
+const path = require('path');
+const os = require('os');
+
+const file = process.argv[2] || path.join(__dirname, '..', 'web', 'index.html');
+const html = fs.readFileSync(file, 'utf8');
+let src = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const tail = src.lastIndexOf('})();');
+src = src.slice(0, tail) + `globalThis.__T = { entities, owner, counts, inArena, input, cam, N, CELL,
+  CENTER, ARENA_R, SPEED, HOME_R, settings, parentCfg, progress, GOALS,
+  get arenaCells(){return arenaCells}, get mode(){return mode}, get simTime(){return simTime},
+  get player(){return player}, get paused(){return paused}, get diff(){return diff},
+  get playedSec(){return playedSec}, set playedSec(v){playedSec=v},
+  get newStars(){return newStars}, get roundLoops(){return roundLoops},
+  capture, addTrailPoint, stampDisc, kill, startMatch, step, pctOf, breakTick };\n` + src.slice(tail);
+
+// ---- elements that start hidden in the HTML ----
+const seed = {};
+for (const m of html.matchAll(/<[a-z0-9]+\s+id="([^"]+)"\s+class="([^"]*)"/g)) seed[m[1]] = m[2].split(/\s+/).filter(Boolean);
+
+const listeners = {};
+let renderCount = 0;
+const ctx2d = new Proxy({}, {
+  get(t, k) {
+    if (k === 'createImageData') return (w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h });
+    if (k === 'fillRect') return (x, y, w, h) => { if (x === 0 && y === 0 && w === 1280 && h === 800) renderCount++; };
+    if (k === 'measureText') return () => ({ width: 10 });
+    return k in t ? t[k] : () => {};
+  },
+  set(t, k, v) { t[k] = v; return true; }
+});
+function mkEl(id) {
+  const cls = new Set(seed[id] || []);
+  return {
+    id, style: {}, children: [], value: '', textContent: '', innerHTML: '', className: '', width: 0, height: 0,
+    disabled: false, dataset: {}, type: '',
+    classList: {
+      add: c => cls.add(c), remove: c => cls.delete(c), contains: c => cls.has(c),
+      toggle: (c, on) => ((on === undefined ? !cls.has(c) : on) ? cls.add(c) : cls.delete(c))
+    },
+    appendChild(c) { this.children.push(c); return c; },
+    remove() {}, blur() {}, focus() {}, setAttribute() {}, getContext() { return ctx2d; },
+    addEventListener(type, fn) { (listeners[id + ':' + type] = listeners[id + ':' + type] || []).push(fn); }
+  };
+}
+const els = {};
+let anon = 0, rafCb = null, fakeNow = 1000;
+globalThis.document = {
+  hidden: false,
+  getElementById: id => els[id] || (els[id] = mkEl(id)),
+  createElement: tag => mkEl('anon' + (anon++) + ':' + tag),
+  addEventListener(type, fn) { (listeners['document:' + type] = listeners['document:' + type] || []).push(fn); }
+};
+globalThis.window = globalThis;
+Object.assign(globalThis, {
+  innerWidth: 1280, innerHeight: 800, devicePixelRatio: 1.5,
+  addEventListener(type, fn) { (listeners['window:' + type] = listeners['window:' + type] || []).push(fn); },
+  matchMedia: () => ({ matches: true }),
+  requestAnimationFrame: cb => { rafCb = cb; return 1; },
+  cancelAnimationFrame: () => { rafCb = null; },
+  localStorage: {
+    _d: {}, getItem(k) { return Object.prototype.hasOwnProperty.call(this._d, k) ? this._d[k] : null; },
+    setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; }
+  }
+});
+Object.defineProperty(globalThis, 'performance', { value: { now: () => fakeNow }, configurable: true, writable: true });
+Date.now = () => fakeNow;
+// kids' defaults for the core rule tests: hard rules, no break reminder, tutorial already seen
+localStorage._d['loopfront.settings'] = JSON.stringify({ name: '', color: '#ef476f', character: 'cat', sound: true, seenHowTo: true });
+localStorage._d['loopfront.parent'] = JSON.stringify({ difficulty: 'hard', breakMin: 0, saver: false });
+
+(0, eval)(src);
+const T = globalThis.__T;
+const fire = (key, ev) => (listeners[key] || []).forEach(fn => fn(ev || {}));
+const key = (type, k) => fire('window:' + type, { key: k, target: null, preventDefault() {} });
+const click = id => fire(id + ':click');
+function frames(n, ms) { for (let i = 0; i < n; i++) { fakeNow += ms || 1000 / 60; const cb = rafCb; if (cb) cb(fakeNow); } }
+const poke = () => fire('window:pointermove', { clientX: 5, clientY: 5 });
+const hasClass = (id, c) => els[id].classList.contains(c);
+
+let failed = 0, total = 0;
+function check(name, ok, extra) {
+  total++;
+  console.log((ok ? 'PASS ' : 'FAIL ') + name + (extra !== undefined && extra !== '' ? '  [' + extra + ']' : ''));
+  if (!ok) failed++;
+}
+
+function invariants(label) {
+  const real = new Int32Array(T.counts.length);
+  for (let i = 0; i < T.owner.length; i++) {
+    real[T.owner[i]]++;
+    if (T.owner[i] && !T.inArena[i]) return check(label + ': owned cell outside arena', false);
+  }
+  let ok = true, detail = '';
+  for (const e of T.entities) {
+    if (real[e.id] !== T.counts[e.id]) { ok = false; detail += ` id${e.id} real=${real[e.id]} counts=${T.counts[e.id]}`; }
+    if (!e.alive && real[e.id] !== 0) { ok = false; detail += ` dead id${e.id} still owns ${real[e.id]}`; }
+    if (e.alive && (!isFinite(e.x) || !isFinite(e.y) || !isFinite(e.angle))) { ok = false; detail += ` NaN id${e.id}`; }
+    if (e.alive && Math.hypot(e.x - T.CENTER, e.y - T.CENTER) > T.ARENA_R) { ok = false; detail += ` id${e.id} outside arena`; }
+    if (e.alive && real[e.id] === 0) { ok = false; detail += ` alive id${e.id} owns nothing`; }
+  }
+  check(label + ': grid/count invariants', ok, detail);
+}
+
+const DIRKEYS = ['d', 's', 'a', 'w'];
+function spinFrame(p) {
+  const q = ((Math.round((p.angle + Math.PI / 2) / (Math.PI / 2)) % 4) + 4) % 4;
+  DIRKEYS.forEach((k, i) => key(i === q ? 'keydown' : 'keyup', k));
+}
+function releaseAll() { DIRKEYS.forEach(k => key('keyup', k)); }
+
+function soloStart() {
+  click('againBtn');
+  for (const e of T.entities) if (!e.isPlayer && e.alive) T.kill(e, null, 'wall');
+  for (const e of T.entities) if (!e.isPlayer) e.respawnAt = 1e9;
+  return T.player;
+}
+function readQuestion() {
+  const m = els.gateQ.textContent.match(/(\d+) x (\d+)/);
+  return m ? +m[1] * +m[2] : -1;
+}
+function typeAnswer(n) {
+  click('gateClear');
+  for (const d of String(n)) click('gateKey' + d);
+  click('gateOk');
+}
+function openParentViaGate() {
+  click('parentBtn');
+  typeAnswer(readQuestion());
+}
+function placeOnTrail(bot, p, name) {
+  // put a bot right on the player's trail so contact is certain on the next step
+  const k = Math.max(0, p.tx.length - 25);
+  bot.alive = true; bot.name = name; bot.kills = 0; bot.isPlayer = false;
+  bot.bx0 = T.N; bot.by0 = T.N; bot.bx1 = -1; bot.by1 = -1;
+  bot.x = bot.px = p.tx[k] + 3; bot.y = bot.py = p.ty[k];
+  T.stampDisc(bot, bot.x + 400, bot.y, 30, false);
+  bot.ai = { state: 'attack', plan: null, next: 1e9, homeSince: 0, bold: 1, caution: 0.7, aggr: 0, ax: 0, ay: 0 };
+  bot.angle = bot.targetAngle = 0;
+}
+
+// =====================================================================
+// 1. flood-fill unit tests
+// =====================================================================
+{
+  T.startMatch(false);
+  for (const e of T.entities) if (e.alive) T.kill(e, null, 'wall');
+  const e = T.entities[3];
+  e.alive = true; e.isPlayer = false; e.x = 1500; e.y = 1500; e.bx0 = T.N; e.by0 = T.N; e.bx1 = -1; e.by1 = -1;
+  T.stampDisc(e, 1500, 1500, 58, false);
+  const pts = [[1550, 1500], [1900, 1500], [1900, 1800], [1500, 1800], [1500, 1550]];
+  let [lx, ly] = pts[0];
+  T.addTrailPoint(e, lx, ly);
+  for (let k = 1; k < pts.length; k++) {
+    const [x, y] = pts[k]; const d = Math.hypot(x - lx, y - ly), n = Math.ceil(d / 6);
+    for (let s = 1; s <= n; s++) T.addTrailPoint(e, lx + (x - lx) * s / n, ly + (y - ly) * s / n);
+    lx = x; ly = y;
+  }
+  e.x = 1500; e.y = 1545;
+  T.capture(e);
+  const got = T.counts[e.id] * T.CELL * T.CELL;
+  check('flood fill claims enclosed rectangle', got > 400 * 300 * 0.97 && got < 400 * 300 * 1.15 + 11000, `area=${got}`);
+  check('trail cleared after capture', e.tx.length === 0);
+  const foe = T.entities[4];
+  foe.alive = true; foe.x = 1700; foe.y = 1650; foe.bx0 = T.N; foe.by0 = T.N; foe.bx1 = -1; foe.by1 = -1;
+  T.stampDisc(foe, 1700, 1650, 40, false);
+  const foeCells = T.counts[foe.id];
+  for (let x = 1445; x >= 1380; x -= 6) T.addTrailPoint(e, x, 1500);
+  for (let y = 1506; y <= 1560; y += 6) T.addTrailPoint(e, 1380, y);
+  for (let x = 1386; x <= 1440; x += 6) T.addTrailPoint(e, x, 1560);
+  e.x = 1460; e.y = 1545;
+  const before = T.counts[e.id];
+  T.capture(e);
+  check('second loop adds area', T.counts[e.id] > before + 80, `+${T.counts[e.id] - before} cells`);
+  check('interior enemy pocket untouched by unrelated capture', T.counts[foe.id] === foeCells, `${T.counts[foe.id]} vs ${foeCells}`);
+  invariants('unit');
+}
+
+// =====================================================================
+// 2. bots only (hard rules): they play behind the start screen
+// =====================================================================
+{
+  T.startMatch(false);
+  check('hard rules: 11 bots spawned behind the menu', T.entities.filter(e => e.alive).length === 11);
+  let deaths = 0, maxPct = 0;
+  let prev = T.entities.map(e => e.alive);
+  const t0 = Date.now();
+  const real0 = process.hrtime.bigint();
+  for (let f = 0; f < 60 * 180; f++) {
+    if (f % 600 === 0) poke();
+    frames(1);
+    T.entities.forEach((e, i) => { if (prev[i] && !e.alive) deaths++; prev[i] = e.alive; });
+    if (f % 600 === 599) for (const e of T.entities) if (e.alive) maxPct = Math.max(maxPct, T.pctOf(e));
+  }
+  const ms = Number(process.hrtime.bigint() - real0) / 1e6;
+  const grew = T.entities.filter(e => e.alive && T.counts[e.id] > 500).length;
+  check('bots expand territory', grew >= 5, `${grew} bots above start size, top=${maxPct.toFixed(2)}%`);
+  check('bot eliminations are bounded', deaths < 90, `${deaths} in 180 s`);
+  check('some eliminations happen', deaths > 0);
+  console.log(`     180 sim-seconds in ${ms.toFixed(0)} ms (${(ms / 10800).toFixed(3)} ms/frame incl. stub render)`);
+  invariants('attract');
+}
+
+// =====================================================================
+// 3. start screen -> play -> capture a loop
+// =====================================================================
+{
+  els.nick.value = '  <b>Tester</b>  ';
+  click('playBtn');
+  const p = T.player;
+  check('play starts a round', T.mode === 'playing' && p && p.alive && p.isPlayer, `name=${JSON.stringify(p && p.name)}`);
+  check('typed name is plain text, trimmed', p.name === '<b>Tester</b>');
+  check('start screen hidden, HUD shown', hasClass('startScreen', 'hidden') && !hasClass('hud', 'hidden'));
+  const c0 = T.counts[p.id];
+  let captured = false;
+  for (let f = 0; f < 60 * 6 && p.alive; f++) { spinFrame(p); frames(1); if (T.counts[p.id] > c0 + 50) { captured = true; break; } }
+  releaseAll();
+  check('circling out and back captures territory', captured, `cells ${c0} -> ${T.counts[p.id]}, alive=${p.alive}`);
+  check('loop counted for the round', T.roundLoops >= 1, `loops=${T.roundLoops}`);
+  frames(30);
+  check('leaderboard rows populated', els.boardList.children.length === 6 && els.boardList.children[0].children[1].textContent.length > 0);
+  check('land % shown in HUD', /%$/.test(els.statPct.textContent), els.statPct.textContent);
+  invariants('playing');
+}
+
+// =====================================================================
+// 4. steering: every key and the pointer go toward their side of the screen
+// =====================================================================
+{
+  const norm = a => Math.atan2(Math.sin(a), Math.cos(a));
+  const near = (a, b) => Math.abs(norm(a - b)) < 0.05;
+  const cases = [['ArrowLeft', Math.PI, 'x', -1], ['ArrowRight', 0, 'x', 1], ['ArrowUp', -Math.PI / 2, 'y', -1], ['ArrowDown', Math.PI / 2, 'y', 1],
+                 ['a', Math.PI, 'x', -1], ['d', 0, 'x', 1], ['w', -Math.PI / 2, 'y', -1], ['s', Math.PI / 2, 'y', 1]];
+  let bad = 0;
+  for (const start of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    for (const [k, want, axis, sign] of cases) {
+      const p = soloStart();
+      p.x = p.px = T.CENTER; p.y = p.py = T.CENTER; p.angle = start;
+      key('keydown', k); frames(70);
+      const pos0 = p[axis]; frames(10); key('keyup', k);
+      if (!(p.alive && near(p.angle, want) && Math.sign(p[axis] - pos0) === sign)) {
+        bad++; check('key ' + k + ' from heading ' + start.toFixed(2), false, 'angle=' + p.angle.toFixed(2) + ' alive=' + p.alive);
+      }
+    }
+  }
+  check('all 8 keys steer toward their screen side from every heading', bad === 0);
+  for (const [mx, my, axis, sign] of [[100, 400, 'x', -1], [1180, 400, 'x', 1], [640, 50, 'y', -1], [640, 750, 'y', 1]]) {
+    const p = soloStart();
+    p.x = p.px = T.CENTER; p.y = p.py = T.CENTER; p.angle = 1; T.cam.x = p.x; T.cam.y = p.y;
+    fire('window:pointermove', { clientX: mx, clientY: my });
+    frames(80); const pos0 = p[axis]; frames(10);
+    check('pointer at (' + mx + ',' + my + ') steers ' + axis + (sign > 0 ? '+' : '-'), p.alive && Math.sign(p[axis] - pos0) === sign);
+  }
+}
+
+// =====================================================================
+// 5. endings on hard rules (bots removed so nothing interferes)
+// =====================================================================
+{
+  let p = soloStart();
+  let f = 0;
+  for (; f < 60 * 20 && T.mode === 'playing'; f++) frames(1);
+  check('wall ends the round on hard', T.mode === 'over' && !p.alive, `after ${(f / 60).toFixed(1)} s`);
+  check('cause text: wall', els.ovCause.textContent === 'You bumped the edge of the island.', els.ovCause.textContent);
+  check('result screen stats filled', /%$/.test(els.ovPct.textContent) && /^\d+:\d\d$/.test(els.ovTime.textContent) && els.ovKills.textContent === '0');
+  check('territory removed on exit', T.counts[p.id] === 0);
+
+  p = soloStart();
+  p.angle = Math.atan2(T.CENTER - p.y, T.CENTER - p.x);
+  frames(60);
+  for (f = 0; f < 60 * 4 && T.mode === 'playing'; f++) { spinFrame(p); frames(1); }
+  releaseAll();
+  check('own trail ends the round', T.mode === 'over' && els.ovCause.textContent === 'You ran over your own trail.', els.ovCause.textContent);
+
+  p = soloStart();
+  p.angle = Math.atan2(T.CENTER - p.y, T.CENTER - p.x);
+  frames(50);
+  let bot = T.entities[5];
+  placeOnTrail(bot, p, 'Cutter');
+  for (f = 0; f < 30 && T.mode === 'playing'; f++) frames(1);
+  check('enemy crossing the trail ends the round', T.mode === 'over' && els.ovCause.textContent === 'Cutter crossed your trail.', els.ovCause.textContent);
+  check('tag credited to the other player', bot.kills === 1);
+
+  p = soloStart();
+  const b2 = T.entities[6];
+  b2.alive = true; b2.name = 'Victim'; b2.kills = 0; b2.bx0 = T.N; b2.by0 = T.N; b2.bx1 = -1; b2.by1 = -1;
+  p.angle = Math.atan2(T.CENTER - p.y, T.CENTER - p.x);
+  const fx = Math.cos(p.angle), fy = Math.sin(p.angle), sx = -fy, sy = fx;
+  const cx = p.x + fx * 150, cy = p.y + fy * 150;
+  T.stampDisc(b2, cx - sx * 400, cy - sy * 400, 30, false);
+  for (let d = -200; d <= 100; d += 6) T.addTrailPoint(b2, cx + sx * d, cy + sy * d);
+  b2.x = cx + sx * 104; b2.y = cy + sy * 104; b2.angle = b2.targetAngle = Math.atan2(sy, sx);
+  b2.ai = { state: 'expand', plan: { dir: b2.angle, leg1: 5000, leg2: 10, sign: 1 }, next: 1e9, homeSince: 0, bold: 1, caution: 0, aggr: 0, ax: 0, ay: 0 };
+  for (f = 0; f < 90 && b2.alive; f++) frames(1);
+  check('touching a bot trail removes the bot', !b2.alive && p.alive && p.kills === 1, `bot alive=${b2.alive} kills=${p.kills}`);
+  check('removed bot land cleared', T.counts[b2.id] === 0);
+  frames(20);
+  check('tag counter in HUD', els.statKills.textContent === '1', els.statKills.textContent);
+
+  p = soloStart();
+  p.angle = Math.atan2(T.CENTER - p.y, T.CENTER - p.x);
+  frames(40);
+  const b3 = T.entities[7];
+  b3.alive = true; b3.name = 'Rammer'; b3.kills = 0; b3.bx0 = T.N; b3.by0 = T.N; b3.bx1 = -1; b3.by1 = -1;
+  const hx = Math.cos(p.angle), hy = Math.sin(p.angle);
+  b3.x = p.x + hx * 200; b3.y = p.y + hy * 200;
+  T.stampDisc(b3, b3.x + hx * 500 - hy * 300, b3.y + hy * 500 + hx * 300, 30, false);
+  b3.angle = b3.targetAngle = p.angle + Math.PI;
+  b3.ai = { state: 'attack', plan: null, next: 1e9, homeSince: 0, bold: 1, caution: 0, aggr: 0, ax: 0, ay: 0 };
+  for (f = 0; f < 60 && T.mode === 'playing'; f++) frames(1);
+  check('head-on outside land removes both', T.mode === 'over' && !b3.alive && els.ovCause.textContent === 'You bumped into Rammer.', `${els.ovCause.textContent} botAlive=${b3.alive}`);
+
+  p = soloStart();
+  p.angle = Math.atan2(T.CENTER - p.y, T.CENTER - p.x);
+  frames(40);
+  const b4 = T.entities[8];
+  b4.alive = true; b4.name = 'Homer'; b4.kills = 0; b4.bx0 = T.N; b4.by0 = T.N; b4.bx1 = -1; b4.by1 = -1;
+  const gx = Math.cos(p.angle), gy = Math.sin(p.angle);
+  b4.x = p.x + gx * 200; b4.y = p.y + gy * 200;
+  T.stampDisc(b4, b4.x, b4.y, 120, false);
+  b4.angle = b4.targetAngle = p.angle + Math.PI;
+  b4.ai = { state: 'attack', plan: null, next: 1e9, homeSince: 0, bold: 1, caution: 0, aggr: 0, ax: 0, ay: 0 };
+  for (f = 0; f < 60 && T.mode === 'playing'; f++) frames(1);
+  check('head-on: the one on its own land stays', T.mode === 'over' && b4.alive && els.ovCause.textContent === 'You bumped into Homer.', `${els.ovCause.textContent} botAlive=${b4.alive}`);
+  invariants('endings');
+}
+
+// =====================================================================
+// 6. 30 fps device with hitches
+// =====================================================================
+{
+  click('againBtn');
+  for (let f = 0; f < 30 * 60; f++) { if (T.player.alive) spinFrame(T.player); frames(1, f % 97 === 0 ? 250 : 1000 / 30); }
+  releaseAll();
+  invariants('30 fps round');
+}
+
+// =====================================================================
+// 7. kid mode: easy rules
+// =====================================================================
+{
+  T.parentCfg.difficulty = 'easy';
+  let p = soloStart();   // bots killed after start; restart to count them
+  click('againBtn');
+  const bots = T.entities.filter(e => e.alive && !e.isPlayer);
+  check('easy: 6 friendly bots', bots.length === 6, String(bots.length));
+  check('easy: no bot can chase', bots.every(b => b.ai.aggr === 0));
+  check('easy: bots are slower than the player', bots.every(b => Math.abs(b.speed - T.SPEED * 0.8) < 1e-6) && T.player.speed === T.SPEED);
+  let attacked = false;
+  for (let f = 0; f < 60 * 120; f++) {
+    if (f % 300 === 0) poke();
+    frames(1);
+    for (const b of T.entities) if (b.alive && !b.isPlayer && b.ai && b.ai.state === 'attack') attacked = true;
+  }
+  check('easy: no bot enters attack mode in 120 s', !attacked);
+  invariants('easy bots');
+
+  T.parentCfg.difficulty = 'normal';
+  click('againBtn');
+  check('normal: 8 bots', T.entities.filter(e => e.alive && !e.isPlayer).length === 8);
+
+  T.parentCfg.difficulty = 'easy';
+  p = soloStart();
+  p.x = p.px = T.CENTER + T.ARENA_R - 90; p.y = p.py = T.CENTER; p.angle = 0;
+  let minR = 1e9, maxR = 0;
+  for (let f = 0; f < 60 * 4; f++) { frames(1); const r = Math.hypot(p.x - T.CENTER, p.y - T.CENTER); minR = Math.min(minR, r); maxR = Math.max(maxR, r); }
+  check('easy: the island edge bounces instead of ending the round', T.mode === 'playing' && p.alive && maxR < T.ARENA_R, `maxR=${maxR.toFixed(0)} now=${Math.hypot(p.x - T.CENTER, p.y - T.CENTER).toFixed(0)}`);
+  check('easy: bounce heads back inward', Math.hypot(p.x - T.CENTER, p.y - T.CENTER) < T.ARENA_R - 200);
+
+  // start shield
+  p = soloStart();
+  p.angle = Math.atan2(T.CENTER - p.y, T.CENTER - p.x);
+  frames(60);
+  placeOnTrail(T.entities[5], p, 'Early');
+  frames(30);
+  check('easy: shield keeps the player safe in the first seconds', T.mode === 'playing' && p.alive, `simTime=${T.simTime.toFixed(1)}`);
+  p = soloStart();
+  p.angle = Math.atan2(T.CENTER - p.y, T.CENTER - p.x);
+  frames(60 * 6);
+  placeOnTrail(T.entities[5], p, 'Late');
+  frames(30);
+  check('easy: after the shield an enemy crossing the trail ends the round', T.mode === 'over', `simTime=${T.simTime.toFixed(1)} ${els.ovCause.textContent}`);
+  T.parentCfg.difficulty = 'hard';
+}
+
+// =====================================================================
+// 8. wording and screens
+// =====================================================================
+{
+  const lits = [...src.matchAll(/'([^'\\\n]*)'/g)].map(m => m[1]);
+  const word = /\b(kill|kills|killed|killing|eliminat\w*)\b/i;      // whole words only: element ids like statKills are fine
+  const bad = lits.filter(s => word.test(s));
+  const body = html.replace(/<script>[\s\S]*?<\/script>/, '').replace(/<style>[\s\S]*?<\/style>/, '').replace(/<[^>]+>/g, ' ');
+  check('no violent wording in strings or page text', bad.length === 0 && !word.test(body), bad.join(' | '));
+  check('title text is friendly', els.ovTitle.textContent === 'Oops!', els.ovTitle.textContent);
+  check('HUD labels say Tags, not Kills', /Tags/.test(html) && !/>Kills</.test(html));
+}
+
+// =====================================================================
+// 9. grown-ups gate and settings
+// =====================================================================
+{
+  fire('menuBtn:click');
+  click('parentBtn');
+  check('grown-ups button opens the gate, not the settings', !hasClass('gateScreen', 'hidden') && hasClass('parentScreen', 'hidden'));
+  typeAnswer(readQuestion() + 1);
+  check('wrong answer does not open settings', hasClass('parentScreen', 'hidden') && !hasClass('gateScreen', 'hidden'));
+  typeAnswer(readQuestion() + 1);
+  typeAnswer(readQuestion() + 1);
+  check('three wrong answers lock the keypad', els.gateKey1.disabled === true && els.gateOk.disabled === true);
+  typeAnswer(readQuestion());
+  check('locked keypad ignores even the right answer', hasClass('parentScreen', 'hidden'));
+  fakeNow += 61000;
+  typeAnswer(readQuestion());
+  check('right answer after the lock opens settings', !hasClass('parentScreen', 'hidden') && hasClass('gateScreen', 'hidden'));
+
+  click('diffEasy'); click('break15'); click('saverBtn');
+  const saved = JSON.parse(localStorage._d['loopfront.parent']);
+  check('settings change and persist', T.parentCfg.difficulty === 'easy' && T.parentCfg.breakMin === 15 && T.parentCfg.saver === true &&
+        saved.difficulty === 'easy' && saved.breakMin === 15 && saved.saver === true, JSON.stringify(saved));
+  click('diffHard'); click('break0'); click('saverBtn');
+  check('settings can be changed back', T.parentCfg.difficulty === 'hard' && T.parentCfg.breakMin === 0 && T.parentCfg.saver === false);
+
+  // update panel
+  click('parentCloseBtn');
+  delete globalThis.LoopfrontApp;
+  openParentViaGate();
+  check('no app bridge: update button hidden, shows web version', hasClass('updateBtn', 'hidden') && els.verLabel.textContent === 'Web version');
+  click('parentCloseBtn');
+  let checks = 0, downloads = 0, awake = [];
+  globalThis.LoopfrontApp = { getVersion: () => 12, checkUpdate() { checks++; }, openDownload() { downloads++; }, setKeepAwake(on) { awake.push(on); } };
+  openParentViaGate();
+  check('app bridge: update button visible with version', !hasClass('updateBtn', 'hidden') && /v12/.test(els.verLabel.textContent), els.verLabel.textContent);
+  click('updateBtn');
+  check('update check asks the app and shows progress', checks === 1 && els.updateStatus.textContent === 'Checking...');
+  globalThis.onLoopfrontUpdate({ status: 'ok', latest: 12, current: 12 });
+  check('same version: up to date', /up to date \(v12\)/.test(els.updateStatus.textContent) && hasClass('updateGetBtn', 'hidden'), els.updateStatus.textContent);
+  globalThis.onLoopfrontUpdate({ status: 'ok', latest: 14, current: 12 });
+  check('newer version: offered', /14/.test(els.updateStatus.textContent) && !hasClass('updateGetBtn', 'hidden'), els.updateStatus.textContent);
+  click('updateGetBtn');
+  check('download button hands over to the app', downloads === 1);
+  globalThis.onLoopfrontUpdate({ status: 'error' });
+  check('offline: friendly message, no download button', /No internet/.test(els.updateStatus.textContent) && hasClass('updateGetBtn', 'hidden'), els.updateStatus.textContent);
+  click('parentCloseBtn');
+
+  // keep-awake only during a round
+  click('againBtn');
+  const onWhile = awake[awake.length - 1];
+  T.kill(T.player, null, 'wall');
+  check('screen kept awake during a round, released afterwards', onWhile === true && awake[awake.length - 1] === false, JSON.stringify(awake));
+}
+
+// =====================================================================
+// 10. break reminder
+// =====================================================================
+{
+  T.parentCfg.breakMin = 15;
+  click('againBtn');                 // a round
+  T.kill(T.player, null, 'wall');    // ends it -> 'over'
+  T.playedSec = 901;
+  click('againBtn');
+  check('break reminder shown between rounds', !hasClass('breakScreen', 'hidden') && T.mode === 'over');
+  check('"I\'m back" waits for the countdown', els.breakOkBtn.disabled === true);
+  click('breakOkBtn');
+  check('cannot skip the countdown by tapping', T.mode === 'over' && !hasClass('breakScreen', 'hidden'));
+  fakeNow += 119000; T.breakTick();
+  check('still waiting at 1 s to go', els.breakOkBtn.disabled === true, els.breakCount.textContent);
+  fakeNow += 2000; T.breakTick();
+  check('countdown finished: button enabled', els.breakOkBtn.disabled === false, els.breakCount.textContent);
+  click('breakOkBtn');
+  check('after the break a new round starts and timer resets', T.mode === 'playing' && hasClass('breakScreen', 'hidden') && T.playedSec < 1, `playedSec=${T.playedSec}`);
+
+  T.kill(T.player, null, 'wall');
+  T.playedSec = 901;
+  click('againBtn');
+  click('breakSkipBtn');
+  check('grown-ups skip opens the gate', !hasClass('gateScreen', 'hidden'));
+  typeAnswer(readQuestion());
+  check('correct answer skips the break and starts a round', T.mode === 'playing' && hasClass('breakScreen', 'hidden'));
+
+  T.parentCfg.breakMin = 0;
+  T.kill(T.player, null, 'wall');
+  T.playedSec = 99999;
+  click('againBtn');
+  check('break "Off" never interrupts', T.mode === 'playing' && hasClass('breakScreen', 'hidden'));
+
+  // a round is never interrupted mid-play
+  T.parentCfg.breakMin = 15;
+  T.playedSec = 5000;
+  frames(120);
+  check('a round in progress is never interrupted', T.mode === 'playing' && hasClass('breakScreen', 'hidden'));
+  T.parentCfg.breakMin = 0;
+}
+
+// =====================================================================
+// 11. battery
+// =====================================================================
+{
+  T.parentCfg.difficulty = 'easy';
+  let p = soloStart();
+  click('pauseBtn');
+  check('pause shows the pause screen and stops the loop', T.paused && !hasClass('pauseScreen', 'hidden') && rafCb === null);
+  const t0 = T.simTime; frames(60);
+  check('simulation frozen while paused', T.simTime === t0);
+  click('resumeBtn');
+  check('resume restarts the loop', !T.paused && rafCb !== null);
+  frames(30);
+  check('simulation runs again after resume', T.simTime > t0 + 0.3);
+
+  globalThis.onLoopfrontPause();
+  check('app going to background pauses the round and stops the loop', T.paused && rafCb === null);
+  globalThis.onLoopfrontResume();
+  check('coming back leaves the round paused for the child to resume', T.paused && rafCb === null);
+  click('resumeBtn');
+  check('child taps Keep playing -> running', !T.paused && rafCb !== null);
+
+  document.hidden = true; fire('document:visibilitychange');
+  check('hidden page pauses the round and stops the loop', T.paused && rafCb === null);
+  document.hidden = false; fire('document:visibilitychange');
+  check('page visible again: still paused until resumed', T.paused && rafCb === null);
+  click('resumeBtn');
+
+  // idle menu freezes after 20 s and wakes on touch
+  fire('menuBtn:click');
+  check('menu animation runs at first', rafCb !== null && T.mode === 'menu');
+  frames(60 * 25);
+  check('menu stops animating after 20 s without input', rafCb === null);
+  fire('window:pointerdown', { clientX: 10, clientY: 10 });
+  check('a touch wakes it up again', rafCb !== null);
+
+  // battery saver: same game speed, half the drawing
+  click('againBtn');
+  for (const e of T.entities) if (!e.isPlayer && e.alive) T.kill(e, null, 'wall');
+  for (const e of T.entities) if (!e.isPlayer) e.respawnAt = 1e9;
+  T.parentCfg.saver = false;
+  frames(10);
+  let s0 = T.simTime, r0 = renderCount;
+  frames(120);
+  const normalSim = T.simTime - s0, normalDraw = renderCount - r0;
+  T.parentCfg.saver = true;
+  frames(10);
+  s0 = T.simTime; r0 = renderCount;
+  frames(120);
+  const saverSim = T.simTime - s0, saverDraw = renderCount - r0;
+  check('battery saver keeps the same game speed', Math.abs(normalSim - saverSim) < 0.15 && Math.abs(saverSim - 2) < 0.2, `normal=${normalSim.toFixed(2)}s saver=${saverSim.toFixed(2)}s`);
+  check('battery saver draws about half as many frames', saverDraw <= normalDraw * 0.6 && saverDraw >= normalDraw * 0.4, `normal=${normalDraw} saver=${saverDraw}`);
+  T.parentCfg.saver = false;
+  T.parentCfg.difficulty = 'hard';
+}
+
+// =====================================================================
+// 12. back button, tutorial, stars, sound, names
+// =====================================================================
+{
+  click('againBtn');
+  check('back during a round pauses it', globalThis.onLoopfrontBack() === true && T.paused);
+  check('back while paused is swallowed', globalThis.onLoopfrontBack() === true && T.paused);
+  click('resumeBtn');
+  fire('menuBtn:click');
+  check('back on the plain start screen lets the app leave', globalThis.onLoopfrontBack() === false);
+  click('howBtn');
+  check('back closes the tutorial', globalThis.onLoopfrontBack() === true && hasClass('howScreen', 'hidden'));
+  click('starsBtn');
+  check('stars screen lists every goal', !hasClass('starsScreen', 'hidden') && els.starsGrid.children.length >= 8);
+  check('back closes the stars screen', globalThis.onLoopfrontBack() === true && hasClass('starsScreen', 'hidden'));
+  click('parentBtn');
+  check('back closes the gate', globalThis.onLoopfrontBack() === true && hasClass('gateScreen', 'hidden'));
+  openParentViaGate();
+  check('back closes the grown-ups corner', globalThis.onLoopfrontBack() === true && hasClass('parentScreen', 'hidden'));
+
+  // first-time tutorial
+  T.settings.seenHowTo = false;
+  click('playBtn');
+  check('first play shows the tutorial before starting', !hasClass('howScreen', 'hidden') && T.mode === 'menu');
+  click('howOkBtn');
+  check('"Got it!" starts the round and remembers it', T.mode === 'playing' && T.settings.seenHowTo === true && JSON.parse(localStorage._d['loopfront.settings']).seenHowTo === true);
+
+  // names
+  fire('menuBtn:click');
+  els.nick.value = '';
+  click('diceBtn');
+  check('dice button picks a fun name', els.nick.value.length > 0 && els.nick.value.length <= 14, els.nick.value);
+  els.nick.value = '   ';
+  click('playBtn');
+  check('empty name gets a fun one', T.player.name.length > 0 && T.player.name !== 'You', T.player.name);
+
+  // sound toggle persists
+  const before = T.settings.sound;
+  click('soundBtn');
+  check('sound toggle persists', T.settings.sound === !before && JSON.parse(localStorage._d['loopfront.settings']).sound === !before);
+  click('soundBtn');
+
+  // stars
+  T.progress.stars = {}; T.progress.best = 0;
+  const p = soloStart();
+  T.stampDisc(p, p.x, p.y, 420, false);          // roughly 8% of the island
+  frames(3);
+  const stored = JSON.parse(localStorage._d['loopfront.progress']);
+  check('owning 2% and 5% earns those stars once', T.progress.stars.own2 === true && T.progress.stars.own5 === true && !T.progress.stars.own10 &&
+        T.newStars.filter(g => g.id === 'own2').length === 1, Object.keys(T.progress.stars).join(','));
+  check('stars persist', stored.stars && stored.stars.own2 === true);
+  frames(30);
+  check('a star is only awarded once', T.newStars.filter(g => g.id === 'own2').length === 1);
+  T.kill(p, null, 'self');
+  check('result screen announces new stars', /New star/.test(els.ovStars.textContent) && !hasClass('ovStars', 'hidden'), els.ovStars.textContent);
+  check('best score saved and shown', T.progress.best > 5 && /Best: [5-9]/.test(els.bestLabel.textContent), els.bestLabel.textContent);
+  click('parentBtn'); typeAnswer(readQuestion()); // may still be locked-free
+  click('resetBtn');
+  check('reset needs a second tap', Object.keys(T.progress.stars).length > 0);
+  click('resetBtn');
+  check('second tap clears stars and best', Object.keys(T.progress.stars).length === 0 && T.progress.best === 0);
+  click('parentCloseBtn');
+  invariants('stars');
+}
+
+// =====================================================================
+// 13. offline and safety scan of the shipped page
+// =====================================================================
+{
+  check('no web addresses anywhere', !/https?:\/\//i.test(html));
+  const banned = ['fetch(', 'XMLHttpRequest', 'WebSocket', '<link ', '<script src', '@import', '<a href', 'sendBeacon', 'EventSource', 'importScripts', 'eval('];
+  const hits = banned.filter(b => html.includes(b));
+  check('no network, external-file or navigation features', hits.length === 0, hits.join(', '));
+  check('no TODO / placeholder text', !/TODO|FIXME|XXX/.test(html));
+  const tmp = path.join(os.tmpdir(), 'loopfront-extract-' + process.pid + '.js');
+  fs.writeFileSync(tmp, html.match(/<script>([\s\S]*?)<\/script>/)[1]);
+  let syntax = true, msg = '';
+  try { execFileSync(process.execPath, ['--check', tmp], { stdio: 'pipe' }); } catch (err) { syntax = false; msg = String(err.stderr); }
+  fs.unlinkSync(tmp);
+  check('script passes node --check', syntax, msg);
+  check('page size is small', html.length < 120000, `${html.length} bytes`);
+}
+
+console.log(failed ? `\n${failed} of ${total} CHECK(S) FAILED` : `\nALL ${total} CHECKS PASSED`);
+process.exit(failed ? 1 : 0);
