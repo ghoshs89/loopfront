@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#39b6e8">
@@ -29,7 +30,11 @@
 
   /* ---------- HUD ---------- */
   #hud { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
-  #hudTop { position: absolute; top: 12px; left: 12px; display: flex; gap: 8px; align-items: stretch; }
+  #hudBar {
+    position: absolute; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between;
+    align-items: flex-start; gap: 8px; pointer-events: none;
+  }
+  #hudTop { display: flex; gap: 8px; align-items: stretch; min-width: 0; }
   #pauseBtn {
     pointer-events: auto; width: 62px; padding: 0; border-radius: 20px; background: var(--sun);
     border: 4px solid var(--ink); box-shadow: var(--shadow); display: flex; align-items: center; justify-content: center;
@@ -38,7 +43,7 @@
   .stat { padding: 5px 14px; min-width: 96px; text-align: center; }
   .stat .lbl { display: block; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.6; }
   .stat .val { display: block; font-size: 25px; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1.1; }
-  #board { position: absolute; top: 12px; right: 12px; width: 240px; padding: 8px 10px 6px; }
+  #board { flex: none; width: 240px; padding: 8px 10px 6px; }
   #board h3 { margin: 0 4px 4px; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.6; }
   #boardList { list-style: none; margin: 0; padding: 0; }
   #boardList li { position: relative; display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 12px; font-size: 16px; overflow: hidden; }
@@ -149,6 +154,7 @@
   .seg button { flex: 1; min-height: 52px; padding: 0 4px; border-radius: 14px; border: 3px solid var(--ink); background: #fff; font-size: 16px; }
   .seg button.sel { background: var(--sun); }
   #updateStatus { min-height: 1.3em; font-size: 16px; }
+  #updateNotes { margin: 2px 0 6px; font-size: 14px; opacity: 0.75; max-height: 4.6em; overflow-y: auto; }
   #verLabel { font-size: 15px; opacity: 0.7; }
   #breakCount { font-size: 48px; font-weight: 900; font-variant-numeric: tabular-nums; margin: 6px 0; }
   #breakSkipBtn { margin-top: 10px; background: none; border: 0; font-size: 14px; opacity: 0.6; text-decoration: underline; min-height: 44px; }
@@ -159,6 +165,21 @@
     .stat { min-width: 74px; padding: 4px 8px; }
     .stat .val { font-size: 20px; }
     .logo { font-size: 44px; }
+  }
+  /* narrow screens: counters across the top, leaderboard underneath and right-aligned */
+  @media (max-width: 600px) {
+    #hudBar { flex-direction: column; align-items: flex-end; gap: 8px; top: 8px; left: 8px; right: 8px; }
+    #hudTop { width: 100%; gap: 6px; }
+    #pauseBtn { width: 48px; flex: none; border-radius: 16px; }
+    #pauseBtn svg { width: 22px; height: 22px; }
+    #hudTop .stat { flex: 1 1 0; min-width: 0; padding: 2px 4px; border-width: 3px; border-radius: 16px; }
+    #hudTop .stat .lbl { font-size: 10px; }
+    #hudTop .stat .val { font-size: clamp(13px, 4.2vw, 20px); white-space: nowrap; }
+    #board { width: 188px; padding: 4px 6px 3px; border-width: 3px; border-radius: 16px; }
+    #board h3 { font-size: 11px; margin: 0 2px 2px; }
+    #boardList li { padding: 2px 4px; gap: 6px; font-size: 12px; border-radius: 8px; }
+    #boardList .rank { width: 20px; height: 20px; font-size: 11px; }
+    #minimap { width: 96px; height: 96px; border-width: 3px; }
   }
   @media (max-height: 620px) {
     .logo { font-size: 40px; }
@@ -177,17 +198,19 @@
 <canvas id="game"></canvas>
 
 <div id="hud" class="hidden">
-  <div id="hudTop">
-    <button id="pauseBtn" type="button" aria-label="Pause">
-      <svg viewBox="0 0 28 28"><rect x="5" y="4" width="6" height="20" rx="2" fill="#2b2d42"/><rect x="17" y="4" width="6" height="20" rx="2" fill="#2b2d42"/></svg>
-    </button>
-    <div class="stat panel"><span class="lbl">Land</span><span class="val" id="statPct">0.00%</span></div>
-    <div class="stat panel"><span class="lbl">Tags</span><span class="val" id="statKills">0</span></div>
-    <div class="stat panel"><span class="lbl">Time</span><span class="val" id="statTime">0:00</span></div>
-  </div>
-  <div id="board" class="panel">
-    <h3>Top players</h3>
-    <ol id="boardList"></ol>
+  <div id="hudBar">
+    <div id="hudTop">
+      <button id="pauseBtn" type="button" aria-label="Pause">
+        <svg viewBox="0 0 28 28"><rect x="5" y="4" width="6" height="20" rx="2" fill="#2b2d42"/><rect x="17" y="4" width="6" height="20" rx="2" fill="#2b2d42"/></svg>
+      </button>
+      <div class="stat panel"><span class="lbl">Land</span><span class="val" id="statPct">0.00%</span></div>
+      <div class="stat panel"><span class="lbl">Tags</span><span class="val" id="statKills">0</span></div>
+      <div class="stat panel"><span class="lbl">Time</span><span class="val" id="statTime">0:00</span></div>
+    </div>
+    <div id="board" class="panel">
+      <h3>Top players</h3>
+      <ol id="boardList"></ol>
+    </div>
   </div>
   <canvas id="minimap"></canvas>
   <div id="feed"></div>
@@ -325,6 +348,7 @@
       <div class="seg"><button id="updateBtn" type="button">Check for updates</button></div>
     </div>
     <div id="updateStatus"></div>
+    <div id="updateNotes"></div>
     <button id="updateGetBtn" class="btn green small hidden" type="button">Download update</button>
     <div id="verLabel"></div>
     <button id="resetBtn" class="btn small" type="button">Reset stars and best score</button>
@@ -760,8 +784,20 @@ let spectate = null;
 let bestPct = 0;
 let overTimer = 0;
 let roundLoops = 0;
-let playedSec = 0;          // real play time since the last break
+let playedSec = 0;          // real play time since the last break (wall-clock, not simulation time)
+let activeSince = null;     // performance.now() stamp while a round is actively being played, else null
+let inStep = false;         // true while a simulation step is resolving collisions
+let pendingEnd = null;      // the player's first terminal event of the current step, finalised after the step
 let diff = DIFFICULTY.easy;
+
+// Add the wall-clock time since the last stamp to playedSec. Safe to call any number of times:
+// it does nothing when no stamp is set, so duplicate pause/background notifications cannot double-count.
+function accountPlay(keepRunning) {
+  if (activeSince === null) return;
+  const now = performance.now();
+  playedSec += Math.max(0, now - activeSince) / 1000;
+  activeSince = keepRunning ? now : null;
+}
 let playerName = '';
 const newStars = [];
 const cam = { x: CENTER, y: CENTER, scale: 1 };
@@ -773,7 +809,7 @@ const KEYMAP = {
 function releaseKeys() { input.left = false; input.right = false; input.up = false; input.down = false; }
 
 const settings = { name: '', color: PLAYER_COLORS[0], character: 'cat', sound: true, seenHowTo: false };
-const parentCfg = { difficulty: 'easy', breakMin: 30, saver: false };
+const parentCfg = { difficulty: 'easy', breakMin: 30, saver: false, lockUntil: 0 };
 const progress = { best: 0, rounds: 0, stars: {} };
 
 const particles = [];
@@ -807,6 +843,10 @@ function loadStore() {
     if (DIFFICULTY[p.difficulty]) parentCfg.difficulty = p.difficulty;
     if ([0, 15, 30, 45].indexOf(p.breakMin) >= 0) parentCfg.breakMin = p.breakMin;
     if (typeof p.saver === 'boolean') parentCfg.saver = p.saver;
+    // an unexpired gate lockout survives restarts; absurdly distant values are ignored
+    if (typeof p.lockUntil === 'number' && isFinite(p.lockUntil) && p.lockUntil - Date.now() <= 60000) {
+      parentCfg.lockUntil = p.lockUntil;
+    }
   }
   const g = readJSON('loopfront.progress');
   if (g && typeof g === 'object') {
@@ -853,6 +893,7 @@ function startMatch(withPlayer) {
     if (!spawnEntity(e)) e.respawnAt = simTime + 1;
   }
   bestPct = 0; roundLoops = 0; newStars.length = 0;
+  pendingEnd = null; inStep = false;
   spectate = null;
   if (player && player.alive) { cam.x = player.x; cam.y = player.y; }
   input.mode = 'none'; releaseKeys();
@@ -948,15 +989,31 @@ const GOALS = [
   { id: 'loops10',    label: '10 loops',      ok: () => roundLoops >= 10 }
 ];
 
-function checkStars() {
+// Awards any goals now reached. `silent` is the end-of-round pass: it works even though the player is
+// no longer alive, records the star for the results screen, and skips the floating text and sound.
+function checkStars(silent) {
+  if (!player) return;
   for (const g of GOALS) {
     if (progress.stars[g.id] || !g.ok()) continue;
     progress.stars[g.id] = true;
     newStars.push(g);
     saveProgress();
-    addFloat(player.x, player.y - 56, 'New star!', '#e09f00');
-    confetti(player.x, player.y, 30);
-    sfx('star');
+    if (!silent) {
+      addFloat(player.x, player.y - 56, 'New star!', '#e09f00');
+      confetti(player.x, player.y, 30);
+      sfx('star');
+    }
+  }
+}
+
+// Keeps the round's peak and the saved all-time best up to date. Writes to storage only when
+// the all-time best actually increases, so ordinary frames never touch storage.
+function noteBest(pct) {
+  if (pct > bestPct) bestPct = pct;
+  if (bestPct > progress.best) {
+    progress.best = bestPct;
+    saveProgress();
+    refreshBest();
   }
 }
 
@@ -966,6 +1023,7 @@ function checkStars() {
 function kill(e, killer, cause) {
   if (!e.alive) return;
   const pct = pctOf(e);
+  if (e.isPlayer) noteBest(pct);                   // record the peak before the land disappears
   e.alive = false;
 
   // territory disappears
@@ -996,13 +1054,21 @@ function kill(e, killer, cause) {
     addFeed(e.name + ' bumped out', false);
   }
 
-  if (e.isPlayer) endGame(pct, killer, cause);
+  if (e.isPlayer) {
+    // inside a simulation step the results wait until every collision and capture of that step has
+    // been resolved (so simultaneous tags are all counted); the first terminal event wins
+    if (inStep) { if (!pendingEnd) pendingEnd = { pct, killer, cause }; }
+    else endGame(pct, killer, cause);
+  }
   else e.respawnAt = simTime + rand(2, 4.5);
 }
 
 function endGame(pct, killer, cause) {
   if (mode !== 'playing') return;
+  accountPlay(false);
+  checkStars(true);                                // final achievements, including this very step's tags
   mode = 'over';
+  pendingEnd = null;
   setAwake(false);
   const win = cause === 'win';
   const who = killer ? killer.name : 'Someone';
@@ -1015,7 +1081,7 @@ function endGame(pct, killer, cause) {
     win: 'You own the whole island!'
   };
   progress.rounds++;
-  progress.best = Math.max(progress.best, bestPct, pct);
+  noteBest(pct);
   saveProgress();
   refreshBest();
   $('ovTitle').textContent = win ? 'ISLAND CHAMPION!' : 'Oops!';
@@ -1294,7 +1360,15 @@ function bounceOffWall(e, dx, dy) {
   e.bumpAt = simTime;
 }
 
+// One simulation step. Removals and tag credits happen as they occur, but the player's result screen
+// is only built once the whole step (collisions, captures, wins) has been resolved.
 function step(h) {
+  inStep = true;
+  try { stepCore(h); } finally { inStep = false; }
+  if (pendingEnd) { const pe = pendingEnd; pendingEnd = null; endGame(pe.pct, pe.killer, pe.cause); }
+}
+
+function stepCore(h) {
   simTime += h;
 
   // respawn + steer + move
@@ -1372,9 +1446,9 @@ function step(h) {
 
   if (mode === 'playing' && player && player.alive) {
     const p = pctOf(player);
-    if (p > bestPct) bestPct = p;
-    checkStars();
-    if (counts[player.id] >= arenaCells * 0.999) endGame(p, null, 'win');
+    noteBest(p);
+    checkStars(false);
+    if (counts[player.id] >= arenaCells * 0.999 && !pendingEnd) pendingEnd = { pct: p, killer: null, cause: 'win' };
   }
 }
 
@@ -1790,6 +1864,7 @@ function frame(now) {
   if (!loopOn) return;
   if (mode !== 'playing' && now - lastInputAt > IDLE_MS) { stopLoop(); return; }
   rafId = requestAnimationFrame(frame);
+  if (mode === 'playing') accountPlay(true);       // real elapsed time, before any throttling or clamping
   if (!lastT) lastT = now;
   const fps = mode === 'playing' ? (parentCfg.saver ? 30 : 60) : 30;
   if (now - lastT < 1000 / fps - 3) return;
@@ -1802,7 +1877,6 @@ function frame(now) {
   const steps = Math.max(1, Math.ceil(dt / 0.02));
   const h = dt / steps;
   for (let i = 0; i < steps; i++) step(h);
-  if (mode === 'playing') playedSec += dt;
 
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
@@ -1853,6 +1927,7 @@ function startGame() {
   startMatch(true);
   paused = false;
   mode = 'playing';
+  activeSince = performance.now();                 // a fresh stamp: menus and results never count
   for (const o of OVERLAYS) hide(o);
   show(hud);
   hudAcc = 1;
@@ -1871,6 +1946,8 @@ function requestStart() {
 
 function showMenu() {
   clearTimeout(overTimer);
+  if (mode === 'playing' && player) noteBest(pctOf(player));   // leaving mid-round keeps the record
+  accountPlay(false);
   paused = false;
   startMatch(false);
   mode = 'menu';
@@ -1883,6 +1960,7 @@ function showMenu() {
 
 function pauseRound() {
   if (mode !== 'playing' || paused) return;
+  accountPlay(false);
   paused = true;
   show(pauseScreen);
   setAwake(false);
@@ -1892,7 +1970,7 @@ function resumeRound() {
   if (!paused) return;
   paused = false;
   hide(pauseScreen);
-  if (mode === 'playing') setAwake(true);
+  if (mode === 'playing') { setAwake(true); activeSince = performance.now(); }
   wake();
 }
 
@@ -1947,11 +2025,11 @@ function closeBreak() {
 }
 
 /* ---- grown-ups gate ---- */
-let gateA = 0, gateB = 0, gateBuf = '', gateWrong = 0, gateLockUntil = 0, gateTarget = 'parent', gateTimer = 0;
+let gateA = 0, gateB = 0, gateBuf = '', gateWrong = 0, gateLockUntil = parentCfg.lockUntil, gateTarget = 'parent', gateTimer = 0;
 const gateKeys = [];
 for (let i = 0; i <= 9; i++) gateKeys.push($('gateKey' + i));
 
-function gateLocked() { return Date.now() < gateLockUntil; }
+function gateLocked() { return Date.now() < Math.max(gateLockUntil, parentCfg.lockUntil); }   // lockUntil is loaded from storage at boot
 function refreshGate() {
   const locked = gateLocked();
   for (const k of gateKeys) k.disabled = locked;
@@ -1987,6 +2065,8 @@ function gateSubmit() {
   if (gateWrong >= 3) {
     gateWrong = 0;
     gateLockUntil = Date.now() + 60000;
+    parentCfg.lockUntil = gateLockUntil;            // survives an app restart
+    saveParent();
     clearTimeout(gateTimer);
     gateTimer = setTimeout(() => { if (isOpen(gateScreen)) { $('gateMsg').textContent = ''; refreshGate(); } }, 60000);
   } else {
@@ -2009,6 +2089,7 @@ function refreshParent() {
   toggleClass($('updateStatus'), 'hidden', !a);
   hide($('updateGetBtn'));
   $('updateStatus').textContent = '';
+  $('updateNotes').textContent = '';
   let ver = 'Web version';
   if (a && a.getVersion) { try { ver = 'Version v' + a.getVersion(); } catch (err) { ver = 'App version unknown'; } }
   $('verLabel').textContent = ver;
@@ -2026,6 +2107,7 @@ function checkForUpdate() {
   if (!a || !a.checkUpdate) return;
   const token = ++updateToken;
   $('updateStatus').textContent = 'Checking...';
+  $('updateNotes').textContent = '';
   hide($('updateGetBtn'));
   try { a.checkUpdate(); } catch (err) { showUpdate({ status: 'error' }); return; }
   setTimeout(() => {
@@ -2036,14 +2118,18 @@ function showUpdate(obj) {
   const st = $('updateStatus');
   if (!obj || obj.status !== 'ok') {
     st.textContent = 'No internet right now. Try again later.';
+    $('updateNotes').textContent = '';
     hide($('updateGetBtn'));
     return;
   }
   if (obj.latest > obj.current) {
     st.textContent = 'Version ' + obj.latest + ' is available.';
+    // what's new: plain text only, from the app, length-limited again here
+    $('updateNotes').textContent = typeof obj.notes === 'string' ? obj.notes.slice(0, 300) : '';
     show($('updateGetBtn'));
   } else {
     st.textContent = "You're up to date (v" + obj.current + ').';
+    $('updateNotes').textContent = '';
     hide($('updateGetBtn'));
   }
 }
@@ -2057,6 +2143,7 @@ function resetProgress() {
   }
   resetArmedAt = 0;
   progress.best = 0; progress.rounds = 0; progress.stars = {};
+  bestPct = 0;                                     // a stale round peak must never restore the old record
   saveProgress();
   refreshBest();
   $('resetBtn').textContent = 'Done!';
@@ -2153,20 +2240,27 @@ $('parentCloseBtn').addEventListener('click', closeParent);
 
 const noOverlayOpen = () => ![howScreen, starsScreen, pauseScreen, breakScreen, gateScreen, parentScreen].some(isOpen);
 
+const isEditable = t => !!t && (t.isContentEditable === true || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''));
+const isInteractive = t => isEditable(t) || (!!t && !!t.closest && !!t.closest('button, a[href], [role="button"]'));
+
 window.addEventListener('keydown', ev => {
   lastInputAt = performance.now();
   ensureAudio();
   if (wantLoop()) startLoop();
   const key = (ev.key || '').toLowerCase();
   if (ev.target === nickInput) {
-    if (key === 'enter') requestStart();
+    // the name field keeps Enter-to-play, but only while the start screen is unobstructed
+    if (key === 'enter' && !ev.repeat && isOpen(startScreen) && noOverlayOpen()) { ev.preventDefault(); requestStart(); }
     return;
   }
+  if (isEditable(ev.target)) return;
   const dir = KEYMAP[key];
-  if (dir) { input[dir] = true; input.mode = 'keys'; input.ax = input.mx; input.ay = input.my; ev.preventDefault(); }
-  else if ((key === 'enter' || key === ' ') && noOverlayOpen()) {
-    if (mode === 'menu') requestStart();
-    else if (mode === 'over' && isOpen(overScreen)) requestStart();
+  if (dir) { input[dir] = true; input.mode = 'keys'; input.ax = input.mx; input.ay = input.my; ev.preventDefault(); return; }
+  // Enter / Space start a game only from a non-interactive target; on a focused button they keep their
+  // native meaning (activate that button) and must not also start a round.
+  if ((key === 'enter' || key === ' ') && !ev.repeat && !isInteractive(ev.target) && noOverlayOpen()) {
+    if (mode === 'menu') { ev.preventDefault(); requestStart(); }
+    else if (mode === 'over' && isOpen(overScreen)) { ev.preventDefault(); requestStart(); }
   }
 });
 window.addEventListener('keyup', ev => {
@@ -2195,13 +2289,13 @@ window.addEventListener('resize', () => { resize(); if (!loopOn) renderOnce(); }
 
 document.addEventListener('visibilitychange', () => {
   pageHidden = !!document.hidden;
-  if (pageHidden) { pauseRound(); stopLoop(); setAwake(false); audioSleep(true); }
+  if (pageHidden) { accountPlay(false); pauseRound(); stopLoop(); setAwake(false); audioSleep(true); }
   else { audioSleep(false); wake(); }
 });
 
 /* ---- hooks for the Android app wrapper ---- */
 window.onLoopfrontUpdate = showUpdate;
-window.onLoopfrontPause = () => { appPaused = true; pauseRound(); stopLoop(); setAwake(false); audioSleep(true); };
+window.onLoopfrontPause = () => { appPaused = true; accountPlay(false); pauseRound(); stopLoop(); setAwake(false); audioSleep(true); };
 window.onLoopfrontResume = () => { appPaused = false; audioSleep(false); wake(); };
 window.onLoopfrontBack = () => {
   if (isOpen(gateScreen)) { closeGate(); return true; }
