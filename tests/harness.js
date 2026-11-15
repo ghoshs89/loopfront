@@ -20,7 +20,8 @@ src = src.slice(0, tail) + `globalThis.__T = { entities, owner, counts, inArena,
   get pendingEnd(){return pendingEnd}, get bestPct(){return bestPct},
   get hearts(){return hearts}, set hearts(v){hearts=v},
   pickups, get nextPickupAt(){return nextPickupAt}, get zoomUntil(){return zoomUntil}, get bubbleUntil(){return bubbleUntil},
-  get freezeUntil(){return freezeUntil}, get roundPower(){return roundPower} };\n` + src.slice(tail);
+  get freezeUntil(){return freezeUntil}, get roundPower(){return roundPower},
+  set roundLoops(v){roundLoops=v}, set roundPower(v){roundPower=v} };\n` + src.slice(tail);
 
 // ---- elements that start hidden in the HTML ----
 const seed = {};
@@ -28,19 +29,28 @@ for (const m of html.matchAll(/<[a-z0-9]+\s+id="([^"]+)"\s+class="([^"]*)"/g)) s
 
 const listeners = {};
 let renderCount = 0;
+const ctxLog = { recording: false, dash: [], fills: new Set(), strokes: new Set() };   // what the game asked the canvas to draw
 const ctx2d = new Proxy({}, {
   get(t, k) {
+    if (k === 'setLineDash') return (a) => { if (ctxLog.recording) ctxLog.dash.push(JSON.stringify(a)); };
     if (k === 'createImageData') return (w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h });
     if (k === 'fillRect') return (x, y, w, h) => { if (x === 0 && y === 0 && w === 1280 && h === 800) renderCount++; };
     if (k === 'measureText') return () => ({ width: 10 });
     return k in t ? t[k] : () => {};
   },
-  set(t, k, v) { t[k] = v; return true; }
+  set(t, k, v) {
+    if (ctxLog.recording) { if (k === 'fillStyle') ctxLog.fills.add(v); else if (k === 'strokeStyle') ctxLog.strokes.add(v); }
+    t[k] = v; return true;
+  }
 });
 function mkEl(id) {
   const cls = new Set(seed[id] || []);
-  return {
-    id, style: {}, children: [], value: '', textContent: '', innerHTML: '', className: '', width: 0, height: 0,
+  let text = '';
+  const el = {
+    id, style: {}, children: [], value: '', innerHTML: '',
+    // like a real DOM node: assigning '' to textContent removes the children
+    get textContent() { return text; },
+    set textContent(v) { text = String(v); if (text === '') this.children.length = 0; }, className: '', width: 0, height: 0,
     disabled: false, dataset: {}, type: '',
     classList: {
       add: c => cls.add(c), remove: c => cls.delete(c), contains: c => cls.has(c),
@@ -50,6 +60,7 @@ function mkEl(id) {
     remove() {}, blur() {}, focus() {}, setAttribute() {}, getContext() { return ctx2d; },
     addEventListener(type, fn) { (listeners[id + ':' + type] = listeners[id + ':' + type] || []).push(fn); }
   };
+  return el;
 }
 const els = {};
 let anon = 0, rafCb = null, fakeNow = 1000;
@@ -1167,6 +1178,160 @@ function bigLand() {
   fire('menuBtn:click');
   for (let f = 0; f < 60 * 40; f++) { if (f % 300 === 0) poke(); frames(1); }
   check('no power-ups appear behind the menu', T.pickups.length === 0 && T.mode === 'menu');
+}
+
+
+// =====================================================================
+// 17. WP3: coins and the dress-up shop
+// =====================================================================
+{
+  const tiles = () => els.shopGrid.children;
+  const tapTile = (i) => fire(tiles()[i].id + ':click');
+  const stateOf = (i) => tiles()[i].children[2].textContent;
+  const storedProgress = () => JSON.parse(localStorage._d['loopfront.progress']);
+  const storedSettings = () => JSON.parse(localStorage._d['loopfront.settings']);
+
+  // ---- earning ----
+  freshGame({ difficulty: 'hard', breakMin: 0 });
+  let p = soloStart();
+  T.kill(p, null, 'wall');
+  check('a round with nothing done earns no coins and shows none', T.progress.coins === 0 && hasClass('ovCoins', 'hidden'));
+
+  p = soloStart();
+  T.stampDisc(p, p.x, p.y, 380, false);                         // about 6.5% of the island
+  frames(3);
+  T.roundLoops = 4; T.roundPower = 2; p.kills = 2;
+  let before = T.progress.coins;
+  T.kill(p, null, 'wall');
+  const roundStars = T.newStars.filter(g => !g.life).length;
+  const expected = Math.floor(T.bestPct * 4) + 2 * 5 + 4 + roundStars * 10 + 2;
+  check('coins = land x4 + tags x5 + loops + stars x10 + power-ups', T.progress.coins - before === expected && expected > 30, `earned ${T.progress.coins - before}, formula ${expected}`);
+  check('the result screen shows the coins earned', els.ovCoinsText.textContent === '+' + expected + ' coins' && !hasClass('ovCoins', 'hidden'), els.ovCoinsText.textContent);
+  check('coins are saved', storedProgress().coins === T.progress.coins && storedProgress().coinsEarned === T.progress.coinsEarned);
+  fire('menuBtn:click');
+  check('the start screen shows the coin total', els.coinLabel.textContent === 'Coins: ' + T.progress.coins, els.coinLabel.textContent);
+
+  // ---- shopping ----
+  T.progress.coins = 0; T.progress.owned = {}; T.progress.bought = 0; T.progress.stars = {};
+  click('shopBtn');
+  check('the shop opens with seven hats', !hasClass('shopScreen', 'hidden') && tiles().length === 7 && els.shopCoins.textContent === '0', `${tiles().length} tiles`);
+  check('free items are marked, others show a price', stateOf(0) === 'On' && stateOf(1) === '30' && stateOf(6) === '200', [stateOf(0), stateOf(1), stateOf(6)].join(','));
+  tapTile(6);
+  check('cannot buy without enough coins, and it says how many more', T.progress.coins === 0 && !T.progress.owned['hats:crown'] && T.settings.hat === 'none' && els.shopMsg.textContent === 'Need 200 more', els.shopMsg.textContent);
+
+  T.progress.coins = 100;
+  tapTile(1);
+  check('buying deducts once, owns and wears the hat', T.progress.coins === 70 && T.progress.owned['hats:cap'] === true && T.settings.hat === 'cap' && T.progress.bought === 1, `coins=${T.progress.coins}`);
+  check('buying is saved', storedProgress().coins === 70 && storedProgress().owned['hats:cap'] === true && storedSettings().hat === 'cap');
+  check('the tile now says it is on', stateOf(1) === 'On' && stateOf(0) === 'Wear');
+  check('buying a first item earns the "new look" star', T.progress.stars.dress1 === true && /Yours now! New star!/.test(els.shopMsg.textContent), els.shopMsg.textContent);
+  tapTile(1);
+  check('tapping the worn item again does nothing', T.progress.coins === 70);
+  tapTile(2);
+  check('a second hat costs its own price', T.progress.coins === 30 && T.settings.hat === 'bow', `coins=${T.progress.coins}`);
+  tapTile(3);
+  check('not enough for the party hat', T.progress.coins === 30 && els.shopMsg.textContent === 'Need 30 more' && T.settings.hat === 'bow', els.shopMsg.textContent);
+  tapTile(0);
+  check('the free "no hat" tile can always be worn', T.settings.hat === 'none' && T.progress.coins === 30);
+  tapTile(1);
+  check('owned items are worn again for free', T.settings.hat === 'cap' && T.progress.coins === 30);
+
+  click('shopTabTrails');
+  check('the trails tab lists four styles', tiles().length === 4);
+  tapTile(2);
+  check('rainbow needs 100 coins', T.settings.trail === 'plain' && els.shopMsg.textContent === 'Need 70 more', els.shopMsg.textContent);
+  click('shopTabIslands');
+  check('the islands tab lists four looks', tiles().length === 4);
+  check('Back closes the shop', globalThis.onLoopfrontBack() === true && hasClass('shopScreen', 'hidden'));
+
+  // ---- every item can be bought and drawn ----
+  T.progress.coins = 5000;
+  click('shopBtn');
+  let drawn = 0;
+  for (const tab of ['shopTabHats', 'shopTabTrails', 'shopTabIslands']) {
+    click(tab);
+    for (let i = 0; i < tiles().length; i++) { tapTile(i); frames(3); drawn++; }
+  }
+  check('all items can be bought and each look renders without errors', T.progress.owned['hats:crown'] && T.progress.owned['trails:sparkle'] && T.progress.owned['themes:space'] && T.settings.theme === 'space' && drawn === 15, `bought=${T.progress.bought} theme=${T.settings.theme}`);
+  click('shopCloseBtn');
+  // trail styles really change what is drawn (easy rules keep the round alive; the player starts outside its land)
+  T.parentCfg.difficulty = 'easy';
+  const palette = ['#ef476f', '#f77f00', '#06d6a0', '#118ab2', '#8338ec', '#ff70a6'];
+  const trailRun = (style) => {
+    T.settings.trail = style;
+    const pl = soloStart();
+    let spot;
+    do { spot = openSpot(); } while (Math.hypot(spot.x - pl.homeX, spot.y - pl.homeY) < 300);
+    pl.x = pl.px = spot.x; pl.y = pl.py = spot.y;
+    pl.angle = Math.atan2(spot.y - pl.homeY, spot.x - pl.homeX);          // straight away from home: the trail only grows
+    frames(120);                                                // a few hundred pixels of trail behind the player
+    ctxLog.dash = []; ctxLog.fills.clear(); ctxLog.strokes.clear(); ctxLog.recording = true;
+    frames(20);
+    ctxLog.recording = false;
+    return { trail: pl.tx.length, dash: ctxLog.dash.slice(), strokes: new Set(ctxLog.strokes), alive: T.mode === 'playing' };
+  };
+  let r = trailRun('dotted');
+  check('the dotted trail is drawn with a dash pattern', r.trail > 20 && r.dash.includes('[2,16]'), `trail=${r.trail} dash=${r.dash.slice(0, 2)}`);
+  r = trailRun('rainbow');
+  check('the rainbow trail cycles through several colours', r.trail > 25 && palette.filter(c => r.strokes.has(c)).length >= 3, [...r.strokes].slice(0, 8).join(' '));
+  r = trailRun('sparkle');
+  check('the sparkle trail keeps the normal line and adds white sparkles', r.trail > 20 && r.dash.length === 0 && r.alive);
+  r = trailRun('plain');
+  check('the plain trail has no dashes or rainbow runs', r.dash.length === 0 && palette.filter(c => r.strokes.has(c)).length < 3);
+  T.parentCfg.difficulty = 'hard';
+  const floors = { snow: '#f4faff', candy: '#ffe3f1', space: '#2b2d5c', sand: '#ffefc2' };
+  const seas = { snow: '#7fb7d9', candy: '#b388eb', space: '#14153a', sand: '#39b6e8' };
+  for (const th of Object.keys(floors)) {
+    T.settings.theme = th;
+    ctxLog.fills.clear(); ctxLog.recording = true; frames(3); ctxLog.recording = false;
+    check('the ' + th + ' island look is drawn with its own sea and floor colours', ctxLog.fills.has(floors[th]) && ctxLog.fills.has(seas[th]), [...ctxLog.fills].slice(0, 5).join(' '));
+  }
+
+  // ---- pals and hats ----
+  freshGame({ difficulty: 'normal', breakMin: 0 });
+  const seen = new Set();
+  for (let i = 0; i < 12; i++) { click('againBtn'); for (const e of T.entities) if (e.alive && !e.isPlayer) seen.add(e.hat); }
+  const valid = new Set(['none', 'cap', 'bow', 'party', 'flower', 'pirate', 'crown']);
+  check('pals sometimes wear valid hats, the player wears their own', [...seen].every(h => valid.has(h)) && seen.size > 1 && T.player.hat === T.settings.hat, [...seen].join(','));
+
+  // ---- tampered or stale saved data ----
+  const withData = (settings, progress) => Object.assign({}, DEFAULT_STORE, {
+    'loopfront.settings': JSON.stringify(Object.assign({ name: '', color: '#ef476f', character: 'cat', sound: true, seenHowTo: true }, settings)),
+    'loopfront.progress': JSON.stringify(progress)
+  });
+  boot(withData({ hat: 'crown', trail: 'rainbow', theme: 'space' }, { coins: 5, owned: { 'hats:cap': true, 'hats:ghost': true, 'trails:nope': true, 'nonsense': true } }));
+  check('worn items that are not owned fall back to the free ones', T.settings.hat === 'none' && T.settings.trail === 'plain' && T.settings.theme === 'sand', `${T.settings.hat}/${T.settings.trail}/${T.settings.theme}`);
+  check('unknown owned items are dropped, valid ones kept', Object.keys(T.progress.owned).join() === 'hats:cap', Object.keys(T.progress.owned).join());
+  boot(withData({ hat: 'cap', theme: 'banana' }, { coins: 0, owned: { 'hats:cap': true } }));
+  check('an owned item stays worn after a restart; an invalid one is ignored', T.settings.hat === 'cap' && T.settings.theme === 'sand');
+  boot(withData({}, { coins: -50, coinsEarned: 'lots', bought: NaN, best: 3 }));
+  check('invalid coin numbers fall back to zero', T.progress.coins === 0 && T.progress.coinsEarned === 0 && T.progress.bought === 0 && T.progress.best === 3);
+  boot(withData({}, { coins: 12.9 }));
+  check('coins are whole numbers', T.progress.coins === 12);
+
+  // ---- lifetime star and reset ----
+  freshGame({ difficulty: 'hard', breakMin: 0 });
+  T.progress.coinsEarned = 190;
+  p = soloStart();
+  T.stampDisc(p, p.x, p.y, 380, false);
+  frames(3);
+  T.kill(p, null, 'wall');
+  check('earning 200 coins in total awards its star', T.progress.stars.coins200 === true && /Earn 200 coins/.test(els.ovStars.textContent), els.ovStars.textContent);
+  T.progress.coins = 500; T.progress.owned['hats:crown'] = true; T.settings.hat = 'crown'; T.settings.theme = 'sand';
+  fire('menuBtn:click');
+  openParentViaGate();
+  check('the reset button is labelled for all progress', els.resetBtn.textContent === 'Reset all progress', els.resetBtn.textContent);
+  click('resetBtn'); click('resetBtn');
+  check('reset clears coins, items, equips, stars and best', T.progress.coins === 0 && Object.keys(T.progress.owned).length === 0 && T.settings.hat === 'none' && T.settings.trail === 'plain' && T.progress.best === 0 && Object.keys(T.progress.stars).length === 0 && T.progress.coinsEarned === 0 && T.progress.bought === 0);
+  check('reset is saved', storedProgress().coins === 0 && storedSettings().hat === 'none');
+  click('parentCloseBtn');
+
+  // ---- wording: never anything that sounds like real money ----
+  const lits2 = [...src.matchAll(/'([^'\\\n]*)'/g)].map(m => m[1]);
+  const body2 = html.replace(/<script>[\s\S]*?<\/script>/, '').replace(/<style>[\s\S]*?<\/style>/, '').replace(/<[^>]+>/g, ' ');
+  const money = /\$|\bpay\b|\bpaid\b|purchas|real money|credit card|subscri/i;
+  check('no wording that suggests real money', !lits2.some(l => money.test(l)) && !money.test(body2), lits2.filter(l => money.test(l)).join(' | '));
+  check('the shop screen exists and starts hidden', /<div id="shopScreen" class="overlay hidden">/.test(html));
 }
 
 

@@ -90,3 +90,44 @@ test('joystick: choose it, drag, and the round keeps running without errors', as
   await expect(page.locator('#hud')).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+const { overlap } = require('./helpers');
+
+for (const [w, h] of [[320, 568], [360, 640], [800, 480], [1280, 800]]) {
+  test(`shop: opens, shows a message when a hat is too dear, fits at ${w} x ${h}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: w, height: h });
+    await seen(page);
+    await open(page);
+    await page.locator('#shopBtn').click();
+    await expect(page.locator('#shopScreen')).toBeVisible();
+    await expect(page.locator('#shopGrid .tile')).toHaveCount(7);
+    await page.locator('#shopGrid .tile').nth(6).click();            // the crown: 200 coins, we have none
+    await expect(page.locator('#shopMsg')).toContainText('Need 200 more');
+    const m = await page.evaluate(() => ({
+      docOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      card: (() => { const r = document.querySelector('#shopScreen .card').getBoundingClientRect(); return { x: r.x, width: r.width }; })(),
+      vw: document.documentElement.clientWidth
+    }));
+    expect(m.docOverflow).toBe(false);
+    expect(m.card.x).toBeGreaterThanOrEqual(0);
+    expect(m.card.x + m.card.width).toBeLessThanOrEqual(m.vw + 0.5);
+    await page.locator('#shopTabTrails').click();
+    await expect(page.locator('#shopGrid .tile')).toHaveCount(4);
+    await page.locator('#shopTabIslands').click();
+    await expect(page.locator('#shopGrid .tile')).toHaveCount(4);
+    await testInfo.attach(`shop-${w}x${h}`, { body: await page.screenshot(), contentType: 'image/png' });
+    await page.locator('#shopCloseBtn').click();
+    await expect(page.locator('#shopScreen')).toBeHidden();
+  });
+
+  test(`start screen: corner labels and buttons do not overlap at ${w} x ${h}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    await seen(page);
+    await open(page);
+    const boxes = await page.evaluate(() => ['coinLabel', 'bestLabel', 'parentBtn'].map((id) => {
+      const r = document.getElementById(id).getBoundingClientRect();
+      return { id, x: r.x, y: r.y, width: r.width, height: r.height };
+    }));
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) expect(overlap(boxes[i], boxes[j])).toBe(false);
+  });
+}

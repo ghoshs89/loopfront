@@ -128,10 +128,27 @@
     position: fixed; right: 14px; bottom: 14px; min-height: 56px; padding: 0 18px; border-radius: 16px;
     border: 3px solid var(--ink); background: rgba(255, 255, 255, 0.9); font-size: 16px;
   }
-  #bestLabel {
+  #bestLabel, #coinLabel {
     position: fixed; left: 14px; bottom: 14px; padding: 10px 16px; border-radius: 16px; font-size: 18px;
     background: #fff; border: 3px solid var(--ink);
   }
+  #coinLabel { bottom: 66px; }
+  #cornerBar { display: contents; }     /* roomy screens: the labels float in the corners */
+  #ovCoins { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 2px 0 8px; font-size: 22px; }
+  #ovCoins canvas, .coinbar canvas { width: 28px; height: 28px; display: block; }
+  .coinbar { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 24px; margin: 0 0 6px; }
+  .tabs { display: flex; gap: 6px; margin: 6px 0 8px; }
+  .tabs button { flex: 1; min-height: 56px; border-radius: 14px; border: 3px solid var(--ink); background: #fff; font-size: 18px; }
+  .tabs button.sel { background: var(--sun); }
+  .shopgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; max-height: 46vh; overflow-y: auto; padding: 2px; touch-action: pan-y; }
+  .tile { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; min-height: 56px; border-radius: 16px; border: 3px solid var(--ink); background: #f4fbff; font-size: 15px; line-height: 1.1; }
+  .tile canvas { width: 72px; height: 72px; display: block; pointer-events: none; }
+  .tile.sel { background: #fff3b0; box-shadow: 0 0 0 4px var(--sun); }
+  .tile .state { font-size: 14px; opacity: 0.85; }
+  .tile .state.price::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 4px; border-radius: 50%; background: #ffd23f; border: 2px solid var(--ink); vertical-align: -1px; }
+  .tile.wobble { animation: wobble 0.5s ease; }
+  @keyframes wobble { 0%, 100% { transform: none; } 20% { transform: translateX(-6px) rotate(-3deg); } 40% { transform: translateX(6px) rotate(3deg); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
+  #shopMsg { min-height: 1.4em; margin: 6px 0 4px; font-size: 17px; }
   #helpText { margin: 10px 0 0; font-size: 16px; opacity: 0.75; }
   .steerrow { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 0 0 12px; }
   .steerrow .field { margin: 0; }
@@ -191,6 +208,12 @@
     #boardList li { padding: 2px 4px; gap: 6px; font-size: 12px; border-radius: 8px; }
     #boardList .rank { width: 20px; height: 20px; font-size: 11px; }
     #minimap { width: 96px; height: 96px; border-width: 3px; }
+  }
+  /* small screens: the corner items join the card's flow instead of covering it */
+  @media (max-width: 600px), (max-height: 620px) {
+    #cornerBar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+    #cornerBar #coinLabel, #cornerBar #bestLabel, #cornerBar #parentBtn { position: static; }
+    #cornerBar #coinLabel, #cornerBar #bestLabel { padding: 6px 12px; font-size: 16px; }
   }
   @media (max-height: 620px) {
     .logo { font-size: 40px; }
@@ -261,15 +284,21 @@
       <button id="starsBtn" class="round" type="button" aria-label="My stars">
         <svg viewBox="0 0 32 32"><polygon points="16,3 20,12 30,13 22,20 25,30 16,24 7,30 10,20 2,13 12,12" fill="#ffd23f" stroke="#2b2d42" stroke-width="2.5" stroke-linejoin="round"/></svg>
       </button>
+      <button id="shopBtn" class="round" type="button" aria-label="Dress-up shop">
+        <svg viewBox="0 0 32 32"><path d="M10 4 L4 9 L8 14 L11 12 L11 28 L21 28 L21 12 L24 14 L28 9 L22 4 Q16 8 10 4Z" fill="#ef476f" stroke="#2b2d42" stroke-width="2.5" stroke-linejoin="round"/></svg>
+      </button>
       <button id="soundBtn" class="round" type="button" aria-label="Sound on or off">
         <svg class="on" viewBox="0 0 32 32"><path d="M4 12h6l8-7v22l-8-7H4z" fill="#2b2d42"/><path d="M22 11c3 3 3 7 0 10M25 8c5 5 5 11 0 16" fill="none" stroke="#2b2d42" stroke-width="3" stroke-linecap="round"/></svg>
         <svg class="off" viewBox="0 0 32 32"><path d="M4 12h6l8-7v22l-8-7H4z" fill="#2b2d42"/><path d="M22 11l8 10M30 11l-8 10" fill="none" stroke="#ef476f" stroke-width="3.5" stroke-linecap="round"/></svg>
       </button>
     </div>
     <p id="helpText">Use the mouse or arrow keys. Leave your land, draw a loop, come back home!</p>
+    <div id="cornerBar">
+      <div id="coinLabel">Coins: 0</div>
+      <div id="bestLabel">Best: 0.00%</div>
+      <button id="parentBtn" type="button">Grown-ups</button>
+    </div>
   </div>
-  <div id="bestLabel">Best: 0.00%</div>
-  <button id="parentBtn" type="button">Grown-ups</button>
 </div>
 
 <div id="overScreen" class="overlay hidden">
@@ -278,6 +307,7 @@
     <h2 id="ovTitle">Oops!</h2>
     <p id="ovCause"></p>
     <div id="ovStars" class="hidden"></div>
+    <div id="ovCoins" class="hidden"><canvas id="ovCoinCv" width="56" height="56"></canvas><span id="ovCoinsText"></span></div>
     <div class="grid">
       <div class="cell"><span class="lbl">Land</span><span class="val" id="ovPct">0.00%</span></div>
       <div class="cell"><span class="lbl">Tags</span><span class="val" id="ovKills">0</span></div>
@@ -319,6 +349,21 @@
     <h2>My stars</h2>
     <div id="starsGrid" class="goals"></div>
     <button id="starsCloseBtn" class="btn" type="button">Close</button>
+  </div>
+</div>
+
+<div id="shopScreen" class="overlay hidden">
+  <div class="card panel">
+    <h2>Dress-up shop</h2>
+    <div class="coinbar"><canvas id="shopCoinCv" width="56" height="56"></canvas><span id="shopCoins">0</span></div>
+    <div class="tabs">
+      <button id="shopTabHats" type="button">Hats</button>
+      <button id="shopTabTrails" type="button">Trails</button>
+      <button id="shopTabIslands" type="button">Islands</button>
+    </div>
+    <div id="shopGrid" class="shopgrid"></div>
+    <div id="shopMsg"></div>
+    <button id="shopCloseBtn" class="btn" type="button">Close</button>
   </div>
 </div>
 
@@ -436,6 +481,33 @@ const DIFFICULTY = {
 };
 const RANK_COLORS = ['#ffd23f', '#cfd8dc', '#e0a064'];
 
+// Dress-up shop: fixed, visible prices in coins earned by playing. No real money, no timers, no random items.
+const SHOP = {
+  hats: [
+    { id: 'none', name: 'No hat', price: 0 }, { id: 'cap', name: 'Cap', price: 30 }, { id: 'bow', name: 'Bow', price: 40 },
+    { id: 'party', name: 'Party hat', price: 60 }, { id: 'flower', name: 'Flower', price: 80 },
+    { id: 'pirate', name: 'Pirate hat', price: 120 }, { id: 'crown', name: 'Crown', price: 200 }
+  ],
+  trails: [
+    { id: 'plain', name: 'Plain', price: 0 }, { id: 'dotted', name: 'Dotted', price: 40 },
+    { id: 'rainbow', name: 'Rainbow', price: 100 }, { id: 'sparkle', name: 'Sparkle', price: 150 }
+  ],
+  themes: [
+    { id: 'sand', name: 'Sunny sand', price: 0 }, { id: 'snow', name: 'Snow', price: 80 },
+    { id: 'candy', name: 'Candy', price: 120 }, { id: 'space', name: 'Space', price: 180 }
+  ]
+};
+const SHOP_SLOT = { hats: 'hat', trails: 'trail', themes: 'theme' };
+const HAT_IDS = SHOP.hats.filter(h => h.id !== 'none').map(h => h.id);
+const THEMES = {
+  sand:  { sea: '#39b6e8', floor: '#ffefc2', grid: 'rgba(150,110,50,0.13)', foam: '#ffffff' },
+  snow:  { sea: '#7fb7d9', floor: '#f4faff', grid: 'rgba(90,120,160,0.14)', foam: '#ffffff' },
+  candy: { sea: '#b388eb', floor: '#ffe3f1', grid: 'rgba(190,80,140,0.14)', foam: '#fff6fb' },
+  space: { sea: '#14153a', floor: '#2b2d5c', grid: 'rgba(255,255,255,0.10)', foam: '#8f94ff' }
+};
+const catalogItem = (tab, id) => SHOP[tab].find(i => i.id === id);
+const owns = (tab, id) => { const it = catalogItem(tab, id); return !!it && (it.price === 0 || progress.owned[tab + ':' + id] === true); };
+
 /* =====================================================================
    Small helpers
    ===================================================================== */
@@ -478,7 +550,7 @@ const ctx = canvas.getContext('2d');
 const mm = $('minimap');
 const mctx = mm.getContext('2d');
 const hud = $('hud'), startScreen = $('startScreen'), overScreen = $('overScreen'), howScreen = $('howScreen');
-const starsScreen = $('starsScreen'), pauseScreen = $('pauseScreen'), breakScreen = $('breakScreen');
+const shopScreen = $('shopScreen'), starsScreen = $('starsScreen'), pauseScreen = $('pauseScreen'), breakScreen = $('breakScreen');
 const gateScreen = $('gateScreen'), parentScreen = $('parentScreen');
 const nickInput = $('nick'), swatchBox = $('swatches'), charBox = $('characters');
 const statPct = $('statPct'), statKills = $('statKills'), statTime = $('statTime');
@@ -487,7 +559,7 @@ const show = el => el.classList.remove('hidden');
 const hide = el => el.classList.add('hidden');
 const isOpen = el => !el.classList.contains('hidden');
 const toggleClass = (el, cls, on) => { if (on) el.classList.add(cls); else el.classList.remove(cls); };
-const OVERLAYS = [howScreen, starsScreen, pauseScreen, breakScreen, gateScreen, parentScreen, overScreen, startScreen];
+const OVERLAYS = [howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, gateScreen, parentScreen, overScreen, startScreen];
 
 let vw = 1, vh = 1, dpr = 1;
 function resize() {
@@ -567,7 +639,7 @@ function resetGrid() {
 const entities = [];
 for (let s = 0; s < SLOTS; s++) {
   entities.push({
-    slot: s, id: s + 1, alive: false, isPlayer: false, name: '', character: 'cat',
+    slot: s, id: s + 1, alive: false, isPlayer: false, name: '', character: 'cat', hat: 'none',
     rgb: [255, 255, 255], hex: '#ffffff', colTrail: '', colHead: '',
     x: 0, y: 0, px: 0, py: 0, angle: 0, targetAngle: 0, inOwn: true, speed: SPEED,
     tx: [], ty: [], tl: [], tminx: 0, tminy: 0, tmaxx: 0, tmaxy: 0,   // active trail
@@ -844,9 +916,10 @@ const KEYMAP = {
 };
 function releaseKeys() { input.left = false; input.right = false; input.up = false; input.down = false; }
 
-const settings = { name: '', color: PLAYER_COLORS[0], character: 'cat', sound: true, seenHowTo: false, steer: 'finger' };
+const settings = { name: '', color: PLAYER_COLORS[0], character: 'cat', sound: true, seenHowTo: false, steer: 'finger',
+                   hat: 'none', trail: 'plain', theme: 'sand' };
 const parentCfg = { difficulty: 'easy', breakMin: 30, saver: false, lockUntil: 0 };
-const progress = { best: 0, rounds: 0, stars: {} };
+const progress = { best: 0, rounds: 0, stars: {}, coins: 0, owned: {}, coinsEarned: 0, bought: 0 };
 
 const particles = [];
 const floats = [];
@@ -874,6 +947,9 @@ function loadStore() {
     if (typeof s.sound === 'boolean') settings.sound = s.sound;
     if (typeof s.seenHowTo === 'boolean') settings.seenHowTo = s.seenHowTo;
     if (s.steer === 'finger' || s.steer === 'stick') settings.steer = s.steer;
+    if (typeof s.hat === 'string' && catalogItem('hats', s.hat)) settings.hat = s.hat;
+    if (typeof s.trail === 'string' && catalogItem('trails', s.trail)) settings.trail = s.trail;
+    if (typeof s.theme === 'string' && catalogItem('themes', s.theme)) settings.theme = s.theme;
   }
   const p = readJSON('loopfront.parent');
   if (p && typeof p === 'object') {
@@ -892,6 +968,19 @@ function loadStore() {
     if (g.stars && typeof g.stars === 'object') {
       for (const k of Object.keys(g.stars)) if (g.stars[k] === true) progress.stars[k] = true;
     }
+    if (typeof g.coins === 'number' && isFinite(g.coins)) progress.coins = Math.max(0, Math.floor(g.coins));
+    if (typeof g.coinsEarned === 'number' && isFinite(g.coinsEarned)) progress.coinsEarned = Math.max(0, Math.floor(g.coinsEarned));
+    if (typeof g.bought === 'number' && isFinite(g.bought)) progress.bought = Math.max(0, Math.floor(g.bought));
+    if (g.owned && typeof g.owned === 'object') {
+      for (const k of Object.keys(g.owned)) {
+        const [tab, id] = k.split(':');
+        if (g.owned[k] === true && SHOP[tab] && catalogItem(tab, id)) progress.owned[k] = true;      // unknown items are dropped
+      }
+    }
+  }
+  // what is worn must be owned: anything tampered with or no longer available falls back to the free default
+  for (const tab of Object.keys(SHOP)) {
+    if (!owns(tab, settings[SHOP_SLOT[tab]])) settings[SHOP_SLOT[tab]] = SHOP[tab][0].id;
   }
 }
 
@@ -915,6 +1004,7 @@ function startMatch(withPlayer) {
     player.isPlayer = true;
     player.name = playerName;
     player.character = settings.character;
+    player.hat = settings.hat;
     setColor(player, settings.color);
     spawnEntity(player);
   }
@@ -925,6 +1015,7 @@ function startMatch(withPlayer) {
     if (ci >= wanted) break;                       // extra slots stay empty on easier levels
     e.name = names[ci % names.length];
     e.character = pick(CHARACTERS);
+    e.hat = Math.random() < 0.35 ? pick(HAT_IDS) : 'none';          // pals sometimes wear hats too
     setColor(e, colors[ci % colors.length]);
     ci++;
     if (!spawnEntity(e)) e.respawnAt = simTime + 1;
@@ -1028,7 +1119,9 @@ const GOALS = [
   { id: 'tag3',       label: 'Tag 3 pals',    ok: () => player.kills >= 3 },
   { id: 'survive120', label: 'Play 2 minutes', ok: () => simTime - player.bornAt >= 120 },
   { id: 'loops10',    label: '10 loops',      ok: () => roundLoops >= 10 },
-  { id: 'power5',     label: '5 power-ups',   ok: () => roundPower >= 5 }
+  { id: 'power5',     label: '5 power-ups',   ok: () => roundPower >= 5 },
+  { id: 'coins200',   label: 'Earn 200 coins', life: true, ok: () => progress.coinsEarned >= 200 },
+  { id: 'dress1',     label: 'Get a new look', life: true, ok: () => progress.bought >= 1 }
 ];
 
 // Awards any goals now reached. `silent` is the end-of-round pass: it works even though the player is
@@ -1046,6 +1139,19 @@ function checkStars(silent) {
       sfx('star');
     }
   }
+}
+
+// Goals that are not tied to one round (coins, shopping). Never pays coins itself, so there is no loop.
+function checkLifetimeStars() {
+  const got = [];
+  for (const g of GOALS) {
+    if (!g.life || progress.stars[g.id] || !g.ok()) continue;
+    progress.stars[g.id] = true;
+    newStars.push(g);
+    got.push(g);
+  }
+  if (got.length) saveProgress();
+  return got;
 }
 
 // Keeps the round's peak and the saved all-time best up to date. Writes to storage only when
@@ -1156,6 +1262,16 @@ function endGame(pct, killer, cause) {
   noteBest(pct);
   saveProgress();
   refreshBest();
+  // coins for this round: land, tags, loops, stars and power-ups
+  const earned = Math.floor(Math.max(bestPct, pct) * 4) + player.kills * 5 + roundLoops +
+                 newStars.filter(g => !g.life).length * 10 + roundPower;
+  progress.coins += earned;
+  progress.coinsEarned += earned;
+  checkLifetimeStars();
+  saveProgress();
+  refreshCoins();
+  $('ovCoinsText').textContent = '+' + earned + (earned === 1 ? ' coin' : ' coins');
+  toggleClass($('ovCoins'), 'hidden', earned === 0);
   $('ovTitle').textContent = win ? 'ISLAND CHAMPION!' : 'Oops!';
   $('ovCause').textContent = causes[cause] || '';
   $('ovPct').textContent = pct.toFixed(2) + '%';
@@ -1169,7 +1285,7 @@ function endGame(pct, killer, cause) {
   toggleClass(st, 'hidden', newStars.length === 0);
   const g = $('ovCreature').getContext('2d');
   g.clearRect(0, 0, 160, 160);
-  drawCreature(g, 80, 92, 44, player.character, player.hex, Math.PI / 2, win ? 'happy' : 'sad', true);
+  drawCreature(g, 80, 100, 44, player.character, player.hex, Math.PI / 2, win ? 'happy' : 'sad', true, player.hat);
   sfx(win ? 'star' : 'oops');
   clearTimeout(overTimer);
   overTimer = setTimeout(() => { if (mode === 'over') show(overScreen); }, win ? 100 : 650);
@@ -1500,6 +1616,7 @@ function stepCore(h) {
       if (!e.isPlayer && e.respawnAt && simTime >= e.respawnAt) {
         e.name = freshBotName();
         e.character = pick(CHARACTERS);
+        e.hat = Math.random() < 0.35 ? pick(HAT_IDS) : 'none';
         if (!spawnEntity(e)) e.respawnAt = simTime + 1;
       }
       continue;
@@ -1604,7 +1721,7 @@ function updateCamera(dt) {
 /* =====================================================================
    Creatures: little round characters drawn with plain canvas paths
    ===================================================================== */
-function drawCreature(c, x, y, r, type, color, angle, mood, noPointer) {
+function drawCreature(c, x, y, r, type, color, angle, mood, noPointer, hat) {
   const lw = Math.max(1.6, r * 0.14);
   c.save();
   c.translate(x, y);
@@ -1668,6 +1785,37 @@ function drawCreature(c, x, y, r, type, color, angle, mood, noPointer) {
   c.beginPath(); c.arc(0, 0, r, 0, TAU);
   c.fillStyle = color; c.fill(); c.stroke();
 
+  // hat, sitting on top of the head (above the eyes)
+  switch (hat) {
+    case 'cap':
+      c.beginPath(); c.arc(0, -0.58 * r, 0.82 * r, Math.PI, TAU); c.closePath(); c.fillStyle = '#3a86ff'; c.fill(); c.stroke();
+      c.beginPath(); c.ellipse(0.42 * r, -0.58 * r, 0.62 * r, 0.12 * r, 0, 0, TAU); c.fillStyle = '#2563d6'; c.fill(); c.stroke();
+      break;
+    case 'bow':
+      poly([0.5, -0.95, 0.08, -1.3, 0.08, -0.6], '#ff70a6', true);
+      poly([0.5, -0.95, 0.92, -1.3, 0.92, -0.6], '#ff70a6', true);
+      disc(0.5, -0.95, 0.13, '#ff4d94');
+      break;
+    case 'party':
+      poly([-0.42, -0.72, 0.42, -0.72, 0, -1.95], '#8338ec', true);
+      c.strokeStyle = '#ffd23f'; line(-0.22, -1.1, 0.22, -1.1); line(-0.12, -1.45, 0.12, -1.45); c.strokeStyle = INK;
+      disc(0, -1.97, 0.15, '#ffd23f');
+      break;
+    case 'flower':
+      for (let k = 0; k < 5; k++) { const a = k * TAU / 5 - Math.PI / 2; disc(0.55 + Math.cos(a) * 0.2, -0.95 + Math.sin(a) * 0.2, 0.17, '#ff70a6'); }
+      disc(0.55, -0.95, 0.13, '#ffd23f');
+      break;
+    case 'pirate':
+      poly([-0.92, -0.58, 0.92, -0.58, 0.55, -1.28, -0.55, -1.28], '#2b2d42', true);
+      disc(0, -0.92, 0.13, '#ffffff');
+      break;
+    case 'crown':
+      poly([-0.62, -0.7, 0.62, -0.7, 0.72, -1.45, 0.36, -1.12, 0, -1.5, -0.36, -1.12, -0.72, -1.45], '#ffd23f', true);
+      disc(0, -0.92, 0.1, '#ef476f');
+      break;
+    default: break;
+  }
+
   // 3. eyes that look where the creature is heading
   const ca = Math.cos(angle), sa = Math.sin(angle);
   for (let k = -1; k <= 1; k += 2) {
@@ -1722,9 +1870,10 @@ function drawStar(c, cx, cy, R, filled) {
    ===================================================================== */
 function render(now) {
   const s = cam.scale;
+  const th = THEMES[settings.theme] || THEMES.sand;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.globalAlpha = 1;
-  ctx.fillStyle = '#39b6e8';
+  ctx.fillStyle = th.sea;
   ctx.fillRect(0, 0, vw, vh);
 
   ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * (vw / 2 - cam.x * s), dpr * (vh / 2 - cam.y * s));
@@ -1735,11 +1884,13 @@ function render(now) {
   ctx.beginPath();
   ctx.arc(CENTER, CENTER, ARENA_R + 12, 0, TAU);
   ctx.lineWidth = 26;
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.globalAlpha = 0.35;
+  ctx.strokeStyle = th.foam;
   ctx.stroke();
+  ctx.globalAlpha = 1;
   ctx.beginPath();
   ctx.arc(CENTER, CENTER, ARENA_R, 0, TAU);
-  ctx.fillStyle = '#ffefc2';
+  ctx.fillStyle = th.floor;
   ctx.fill();
 
   // territory (grid canvas scaled up with smoothing -> soft edges)
@@ -1766,14 +1917,14 @@ function render(now) {
     if (b > a) { ctx.moveTo(a, gy); ctx.lineTo(b, gy); }
   }
   ctx.lineWidth = 1 / s;
-  ctx.strokeStyle = 'rgba(150,110,50,0.13)';
+  ctx.strokeStyle = th.grid;
   ctx.stroke();
 
   // white foam edge of the island
   ctx.beginPath();
   ctx.arc(CENTER, CENTER, ARENA_R + 3, 0, TAU);
   ctx.lineWidth = 8;
-  ctx.strokeStyle = '#ffffff';
+  ctx.strokeStyle = th.foam;
   ctx.stroke();
 
   // trails
@@ -1785,6 +1936,10 @@ function render(now) {
     if (!e.alive || !n) continue;
     if (Math.max(e.tmaxx, e.x) < vx0 - 20 || Math.min(e.tminx, e.x) > vx1 + 20 ||
         Math.max(e.tmaxy, e.y) < vy0 - 20 || Math.min(e.tminy, e.y) > vy1 + 20) continue;
+    if (e.isPlayer && (settings.trail === 'dotted' || settings.trail === 'rainbow')) {
+      strokeStyledTrail(ctx, e.tx.concat(e.x), e.ty.concat(e.y), settings.trail, e.colTrail, TRAIL_W);
+      continue;
+    }
     ctx.beginPath();
     ctx.moveTo(e.tx[0], e.ty[0]);
     for (let i = 1; i < n; i++) ctx.lineTo(e.tx[i], e.ty[i]);
@@ -1862,9 +2017,9 @@ function render(now) {
       ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(76,201,240,0.75)'; ctx.stroke();
     }
     const mood = (simTime < e.wowUntil || trailLen(e) > 600) ? 'wow' : 'happy';
-    drawCreature(ctx, e.x, e.y, cr, e.character, e.hex, e.angle, mood, false);
+    drawCreature(ctx, e.x, e.y, cr, e.character, e.hex, e.angle, mood, false, e.hat);
 
-    const ly = e.y - cr * 1.6 - 8 / s;
+    const ly = e.y - cr * (e.hat === 'party' ? 2.25 : 1.6) - 8 / s;
     ctx.lineWidth = 4 / s;
     ctx.strokeStyle = '#ffffff';
     ctx.strokeText(e.name, e.x, ly);
@@ -1897,6 +2052,30 @@ function render(now) {
   }
 }
 
+// Visual-only trail styles for the shop (collisions and land use the same trail as always).
+function strokeStyledTrail(c, xs, ys, style, base, width) {
+  const n = xs.length;
+  c.lineCap = 'round'; c.lineJoin = 'round'; c.lineWidth = width;
+  if (style === 'rainbow') {
+    c.globalAlpha = 0.85;
+    for (let start = 0, run = 0; start < n - 1; start += 10, run++) {
+      const end = Math.min(n - 1, start + 10);
+      c.beginPath(); c.moveTo(xs[start], ys[start]);
+      for (let i = start + 1; i <= end; i++) c.lineTo(xs[i], ys[i]);
+      c.strokeStyle = PALETTE[run % PALETTE.length];
+      c.stroke();
+    }
+    c.globalAlpha = 1;
+    return;
+  }
+  if (style === 'dotted') c.setLineDash([2, 16]);
+  c.beginPath(); c.moveTo(xs[0], ys[0]);
+  for (let i = 1; i < n; i++) c.lineTo(xs[i], ys[i]);
+  c.strokeStyle = base;
+  c.stroke();
+  if (style === 'dotted') c.setLineDash([]);
+}
+
 function drawMinimap() {
   const S = mm.width, k = S / WORLD, m = mctx;
   m.setTransform(1, 0, 0, 1, 0, 0);
@@ -1904,7 +2083,7 @@ function drawMinimap() {
   m.save();
   m.beginPath();
   m.arc(S / 2, S / 2, ARENA_R * k, 0, TAU);
-  m.fillStyle = '#ffefc2';
+  m.fillStyle = (THEMES[settings.theme] || THEMES.sand).floor;
   m.fill();
   m.clip();
   m.imageSmoothingEnabled = true;
@@ -2051,6 +2230,7 @@ function updatePower() {
 /* =====================================================================
    Main loop (stops completely whenever nothing is moving, to save battery)
    ===================================================================== */
+let sparkleAcc = 0;
 let lastT = 0, hudAcc = 1, frameNo = 0, loopOn = false, rafId = 0, lastInputAt = 0;
 let pageHidden = false, appPaused = false;
 
@@ -2090,6 +2270,13 @@ function frame(now) {
   const steps = Math.max(1, Math.ceil(dt / 0.02));
   const h = dt / steps;
   for (let i = 0; i < steps; i++) step(h);
+  if (settings.trail === 'sparkle' && mode === 'playing' && player && player.alive && player.tx.length && particles.length < 350) {
+    sparkleAcc += dt;
+    while (sparkleAcc >= 0.08) {
+      sparkleAcc -= 0.08;
+      particles.push({ x: player.x + rand(-5, 5), y: player.y + rand(-5, 5), vx: rand(-25, 25), vy: rand(-25, 25), life: 0.5, max: 0.5, size: rand(3, 5), css: '#ffffff', g: 0 });
+    }
+  }
   if (mode === 'playing' && player && player.alive && simTime < zoomUntil && particles.length < 350) {
     const zc = Math.cos(player.angle), zs = Math.sin(player.angle);
     for (let i = 0; i < 2; i++) particles.push({ x: player.x - zc * 16 + rand(-4, 4), y: player.y - zs * 16 + rand(-4, 4), vx: -zc * 60, vy: -zs * 60, life: 0.35, max: 0.35, size: rand(4, 7), css: '#ffd23f', g: 0 });
@@ -2205,6 +2392,103 @@ let howThenStart = false;
 function openHow(thenStart) { howThenStart = !!thenStart; show(howScreen); }
 function closeHow() { hide(howScreen); howThenStart = false; }
 
+/* ---- coins and the dress-up shop ---- */
+function refreshCoins() { $('coinLabel').textContent = 'Coins: ' + progress.coins; }
+function applyTheme() {
+  const th = THEMES[settings.theme] || THEMES.sand;
+  const root = document.documentElement;
+  if (root && root.style && root.style.setProperty) root.style.setProperty('--sea', th.sea);
+}
+function drawCoin(c, size) {
+  c.clearRect(0, 0, size, size);
+  c.lineWidth = size * 0.08; c.strokeStyle = INK;
+  c.beginPath(); c.arc(size / 2, size / 2, size * 0.42, 0, TAU); c.fillStyle = '#ffd23f'; c.fill(); c.stroke();
+  c.beginPath(); c.arc(size / 2, size / 2, size * 0.27, 0, TAU); c.lineWidth = size * 0.06; c.strokeStyle = '#e0a800'; c.stroke();
+}
+
+let shopTab = 'hats', shopMsgTimer = 0;
+function shopMessage(text) {
+  $('shopMsg').textContent = text;
+  clearTimeout(shopMsgTimer);
+  shopMsgTimer = setTimeout(() => { $('shopMsg').textContent = ''; }, 2500);
+}
+function equipItem(tab, id) {
+  settings[SHOP_SLOT[tab]] = id;
+  saveSettings();
+  applyTheme();
+  refreshChars();
+}
+function drawShopPreview(g, tab, id) {
+  g.clearRect(0, 0, 96, 96);
+  if (tab === 'hats') {
+    drawCreature(g, 48, 64, 26, settings.character, settings.color, 0.5, 'happy', true, id);
+  } else if (tab === 'trails') {
+    const xs = [], ys = [];
+    for (let i = 0; i <= 14; i++) { xs.push(8 + i * 5.7); ys.push(48 + Math.sin(i * 0.75) * 18); }
+    strokeStyledTrail(g, xs, ys, id === 'dotted' || id === 'rainbow' ? id : 'plain', rgba(hexToRgb(settings.color), 0.85), 11);
+    if (id === 'sparkle') {
+      g.fillStyle = '#ffffff'; g.strokeStyle = INK; g.lineWidth = 1.5;
+      for (let i = 1; i < 14; i += 3) { g.beginPath(); g.arc(xs[i] + 3, ys[i] - 8, 3.5, 0, TAU); g.fill(); g.stroke(); }
+    }
+  } else {
+    const th = THEMES[id];
+    g.fillStyle = th.sea; g.fillRect(0, 0, 96, 96);
+    g.beginPath(); g.arc(48, 48, 38, 0, TAU); g.fillStyle = th.floor; g.fill();
+    g.lineWidth = 6; g.strokeStyle = th.foam; g.stroke();
+    g.lineWidth = 1.5; g.strokeStyle = th.grid; g.beginPath();
+    for (let k = 24; k <= 72; k += 12) { g.moveTo(k, 20); g.lineTo(k, 76); g.moveTo(20, k); g.lineTo(76, k); }
+    g.stroke();
+  }
+}
+function renderShop() {
+  const grid = $('shopGrid');
+  grid.textContent = '';
+  const slot = SHOP_SLOT[shopTab];
+  for (const it of SHOP[shopTab]) {
+    const worn = settings[slot] === it.id;
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'tile' + (worn ? ' sel' : '');
+    const cv = document.createElement('canvas');
+    cv.width = 96; cv.height = 96;
+    drawShopPreview(cv.getContext('2d'), shopTab, it.id);
+    const nm = document.createElement('span');
+    nm.textContent = it.name;
+    const st = document.createElement('span');
+    st.className = worn || owns(shopTab, it.id) ? 'state' : 'state price';
+    st.textContent = worn ? 'On' : owns(shopTab, it.id) ? 'Wear' : String(it.price);
+    tile.appendChild(cv); tile.appendChild(nm); tile.appendChild(st);
+    tile.addEventListener('click', () => tapItem(shopTab, it, tile));
+    grid.appendChild(tile);
+  }
+  $('shopCoins').textContent = String(progress.coins);
+  toggleClass($('shopTabHats'), 'sel', shopTab === 'hats');
+  toggleClass($('shopTabTrails'), 'sel', shopTab === 'trails');
+  toggleClass($('shopTabIslands'), 'sel', shopTab === 'themes');
+}
+function tapItem(tab, it, tile) {
+  if (settings[SHOP_SLOT[tab]] === it.id) return;                 // already worn
+  if (owns(tab, it.id)) { equipItem(tab, it.id); renderShop(); return; }
+  if (progress.coins >= it.price) {                                // buy once, wear it straight away
+    progress.coins -= it.price;
+    progress.owned[tab + ':' + it.id] = true;
+    progress.bought++;
+    const stars = checkLifetimeStars();
+    saveProgress();
+    equipItem(tab, it.id);
+    refreshCoins();
+    renderShop();
+    sfx('star');
+    shopMessage(stars.length ? 'Yours now! New star!' : 'Yours now!');
+  } else {
+    tile.classList.add('wobble');
+    setTimeout(() => tile.classList.remove('wobble'), 500);
+    shopMessage('Need ' + (it.price - progress.coins) + ' more');
+    sfx('bump');
+  }
+}
+function openShop() { shopTab = 'hats'; $('shopMsg').textContent = ''; renderShop(); show(shopScreen); }
+
 function openStars() {
   const grid = $('starsGrid');
   grid.textContent = '';
@@ -2235,7 +2519,7 @@ function breakTick() {
 function showBreak() {
   const g = $('breakCreature').getContext('2d');
   g.clearRect(0, 0, 160, 160);
-  drawCreature(g, 80, 92, 44, settings.character, settings.color, Math.PI / 2, 'happy', true);
+  drawCreature(g, 80, 100, 44, settings.character, settings.color, Math.PI / 2, 'happy', true, settings.hat);
   breakEnd = Date.now() + 120000;
   $('breakOkBtn').disabled = true;
   show(breakScreen);
@@ -2320,7 +2604,7 @@ function refreshParent() {
   let ver = 'Web version';
   if (a && a.getVersion) { try { ver = 'Version v' + a.getVersion(); } catch (err) { ver = 'App version unknown'; } }
   $('verLabel').textContent = ver;
-  $('resetBtn').textContent = 'Reset stars and best score';
+  $('resetBtn').textContent = 'Reset all progress';
   resetArmedAt = 0;
 }
 function openParent() { refreshParent(); show(parentScreen); }
@@ -2370,6 +2654,9 @@ function resetProgress() {
   }
   resetArmedAt = 0;
   progress.best = 0; progress.rounds = 0; progress.stars = {};
+  progress.coins = 0; progress.owned = {}; progress.coinsEarned = 0; progress.bought = 0;
+  settings.hat = 'none'; settings.trail = 'plain'; settings.theme = 'sand';
+  saveSettings(); applyTheme(); refreshChars(); refreshCoins();
   bestPct = 0;                                     // a stale round peak must never restore the old record
   saveProgress();
   refreshBest();
@@ -2413,7 +2700,7 @@ function refreshChars() {
     c.b.className = c.type === settings.character ? 'sel' : '';
     const g = c.cv.getContext('2d');
     g.clearRect(0, 0, 96, 96);
-    drawCreature(g, 48, 58, 28, c.type, settings.color, 0.5, 'happy', true);
+    drawCreature(g, 48, 62, 26, c.type, settings.color, 0.5, 'happy', true, settings.hat);
   }
 }
 
@@ -2432,6 +2719,11 @@ $('howOkBtn').addEventListener('click', () => {
   if (go) requestStart();
 });
 $('starsBtn').addEventListener('click', openStars);
+$('shopBtn').addEventListener('click', openShop);
+$('shopCloseBtn').addEventListener('click', () => hide(shopScreen));
+$('shopTabHats').addEventListener('click', () => { shopTab = 'hats'; renderShop(); });
+$('shopTabTrails').addEventListener('click', () => { shopTab = 'trails'; renderShop(); });
+$('shopTabIslands').addEventListener('click', () => { shopTab = 'themes'; renderShop(); });
 $('starsCloseBtn').addEventListener('click', () => hide(starsScreen));
 $('steerFinger').addEventListener('click', () => setSteer('finger'));
 $('steerStick').addEventListener('click', () => setSteer('stick'));
@@ -2467,7 +2759,7 @@ $('updateGetBtn').addEventListener('click', () => {
 $('resetBtn').addEventListener('click', resetProgress);
 $('parentCloseBtn').addEventListener('click', closeParent);
 
-const noOverlayOpen = () => ![howScreen, starsScreen, pauseScreen, breakScreen, gateScreen, parentScreen].some(isOpen);
+const noOverlayOpen = () => ![howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, gateScreen, parentScreen].some(isOpen);
 
 const isEditable = t => !!t && (t.isContentEditable === true || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''));
 const isInteractive = t => isEditable(t) || (!!t && !!t.closest && !!t.closest('button, a[href], [role="button"]'));
@@ -2550,6 +2842,7 @@ window.onLoopfrontBack = () => {
   if (isOpen(parentScreen)) { closeParent(); return true; }
   if (isOpen(howScreen)) { closeHow(); return true; }
   if (isOpen(starsScreen)) { hide(starsScreen); return true; }
+  if (isOpen(shopScreen)) { hide(shopScreen); return true; }
   if (breakOpen()) return true;
   if (mode === 'playing') { if (!paused) pauseRound(); return true; }
   return false;
@@ -2565,6 +2858,10 @@ buildCharacters();
 refreshChars();
 refreshSound();
 refreshBest();
+refreshCoins();
+applyTheme();
+drawCoin($('shopCoinCv').getContext('2d'), 56);
+drawCoin($('ovCoinCv').getContext('2d'), 56);
 refreshSteer();
 resize();
 startMatch(false);

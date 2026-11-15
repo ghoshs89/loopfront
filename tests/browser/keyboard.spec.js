@@ -12,6 +12,7 @@ for (const key of KEYS) {
       ['random name', '#diceBtn', async (page) => expect(page.locator('#nick')).not.toHaveValue('')],
       ['character selector', '#characters button >> nth=3', async (page) => expect(page.locator('#characters button').nth(3)).toHaveClass(/sel/)],
       ['colour selector', '#swatches button >> nth=4', async (page) => expect(page.locator('#swatches button').nth(4)).toHaveClass(/sel/)],
+      ['Shop', '#shopBtn', async (page) => expect(page.locator('#shopScreen')).toBeVisible()],
       ['Grown-ups', '#parentBtn', async (page) => expect(page.locator('#gateScreen')).toBeVisible()]
     ];
     for (const [name, selector, effect] of cases) {
