@@ -25,8 +25,8 @@ import java.net.URL;
 public class MainActivity extends Activity {
 
     private static final String PAGE = "file:///android_asset/index.html";
-    private static final String LATEST_API = "https://api.github.com/repos/ghoshs89/loopy/releases/latest";
-    private static final String APK_URL = "https://github.com/ghoshs89/loopy/releases/latest/download/loopfront.apk";
+    private static final String LATEST_API = "https://api.github.com/repos/ghoshs89/loopfront/releases/latest";
+    private static final String APK_URL = "https://github.com/ghoshs89/loopfront/releases/latest/download/loopfront.apk";
 
     private WebView web;
 

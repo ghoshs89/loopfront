@@ -10,7 +10,7 @@ GitHub Actions workflow builds the APK for you.
 ## Install on a Fire tablet
 
 1. On the tablet, open this link in the Silk browser:
-   `https://github.com/ghoshs89/loopy/releases/latest/download/loopfront.apk`
+   `https://github.com/ghoshs89/loopfront/releases/latest/download/loopfront.apk`
 2. Open the downloaded file. When Fire OS asks, allow "install unknown apps" for Silk.
 3. Loopfront appears with your other apps.
 
@@ -59,4 +59,4 @@ grown-ups gate, break reminder, update panel, battery behaviour and offline/safe
 
 ## Notes
 
-Original repository text: "# loopy"
+Original repository text: "# loopy" (the repository was originally named loopy)
