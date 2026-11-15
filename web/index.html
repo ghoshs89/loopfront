@@ -133,6 +133,7 @@
     background: #fff; border: 3px solid var(--ink);
   }
   #coinLabel { bottom: 66px; }
+  #cornerBar { display: contents; }     /* roomy screens: the labels float in the corners */
   #ovCoins { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 2px 0 8px; font-size: 22px; }
   #ovCoins canvas, .coinbar canvas { width: 28px; height: 28px; display: block; }
   .coinbar { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 24px; margin: 0 0 6px; }
@@ -207,6 +208,12 @@
     #boardList li { padding: 2px 4px; gap: 6px; font-size: 12px; border-radius: 8px; }
     #boardList .rank { width: 20px; height: 20px; font-size: 11px; }
     #minimap { width: 96px; height: 96px; border-width: 3px; }
+  }
+  /* small screens: the corner items join the card's flow instead of covering it */
+  @media (max-width: 600px), (max-height: 620px) {
+    #cornerBar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+    #cornerBar #coinLabel, #cornerBar #bestLabel, #cornerBar #parentBtn { position: static; }
+    #cornerBar #coinLabel, #cornerBar #bestLabel { padding: 6px 12px; font-size: 16px; }
   }
   @media (max-height: 620px) {
     .logo { font-size: 40px; }
@@ -286,10 +293,12 @@
       </button>
     </div>
     <p id="helpText">Use the mouse or arrow keys. Leave your land, draw a loop, come back home!</p>
+    <div id="cornerBar">
+      <div id="coinLabel">Coins: 0</div>
+      <div id="bestLabel">Best: 0.00%</div>
+      <button id="parentBtn" type="button">Grown-ups</button>
+    </div>
   </div>
-  <div id="coinLabel">Coins: 0</div>
-  <div id="bestLabel">Best: 0.00%</div>
-  <button id="parentBtn" type="button">Grown-ups</button>
 </div>
 
 <div id="overScreen" class="overlay hidden">
