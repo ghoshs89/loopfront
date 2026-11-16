@@ -2494,6 +2494,7 @@ function refreshSteer() {
   $('helpText').textContent = settings.steer === 'stick'
     ? 'Drag anywhere like a joystick!'
     : (isTouchy() ? 'Hold your finger where you want to go!' : 'Use the mouse or arrow keys. Leave your land, draw a loop, come back home!');
+  if (window.LoopfrontDesktop) $('helpText').textContent += ' WASD also steers. Esc pauses. F11 toggles fullscreen.';
 }
 function setSteer(v) { settings.steer = v; input.stickDown = false; saveSettings(); refreshSteer(); }
 function refreshSound() { toggleClass($('soundBtn'), 'muted', !settings.sound); }
@@ -2793,6 +2794,7 @@ function refreshParent() {
   $('updateStatus').textContent = '';
   $('updateNotes').textContent = '';
   let ver = 'Web version';
+  if (window.LoopfrontDesktop) ver = 'Windows preview v' + window.LoopfrontDesktop.version;
   if (a && a.getVersion) { try { ver = 'Version v' + a.getVersion(); } catch (err) { ver = 'App version unknown'; } }
   $('verLabel').textContent = ver;
   $('resetBtn').textContent = 'Reset all progress';
@@ -2966,6 +2968,9 @@ window.addEventListener('keydown', ev => {
   ensureAudio();
   if (wantLoop()) startLoop();
   const key = (ev.key || '').toLowerCase();
+  if (window.LoopfrontDesktop && key === 'escape' && !ev.repeat && mode === 'playing') {
+    ev.preventDefault(); releaseKeys(); input.stickDown = false; pauseRound(); return;
+  }
   if (ev.target === nickInput) {
     // the name field keeps Enter-to-play, but only while the start screen is unobstructed
     if (key === 'enter' && !ev.repeat && isOpen(startScreen) && noOverlayOpen()) { ev.preventDefault(); requestStart(); }
@@ -2985,7 +2990,13 @@ window.addEventListener('keyup', ev => {
   const dir = KEYMAP[(ev.key || '').toLowerCase()];
   if (dir) input[dir] = false;
 });
-window.addEventListener('blur', releaseKeys);
+window.addEventListener('blur', () => {
+  releaseKeys();
+  if (window.LoopfrontDesktop) { input.stickDown = false; window.onLoopfrontPause(); }
+});
+window.addEventListener('focus', () => {
+  if (window.LoopfrontDesktop) window.onLoopfrontResume();
+});
 
 const onControl = ev => !!(ev.target && ev.target.closest && ev.target.closest('button, .overlay'));   // taps on buttons do not steer
 
