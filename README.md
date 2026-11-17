@@ -125,6 +125,15 @@ Packaging writes the ZIP and an unpacked validation copy under `desktop/dist/`. 
 version `0.1.0`; CI uses `0.1.N`, where N is the Windows workflow run number (independent of Android
 versions). The verifier checks the Windows executable, wrapper, version and bundled game against source.
 
+The Windows icon is derived from the unchanged Android launcher artwork. Regenerate its SVG and
+seven ICO sizes with `npm run icon --prefix desktop` after installing the root Chromium test browser.
+EXE icon and version resources are applied, while signing is explicitly disabled for this preview.
+The verifier checks the embedded icon and Loopfront product/file-description fields as well.
+
+If the renderer crashes, Loopfront reloads the game once automatically. A second crash, or an
+unresponsive window, offers Reload game or Close Loopfront. Saved progress is retained; the current
+round ends. Crash reasons are logged to the process's standard error (visible when launched from a terminal).
+
 For packaged-app tests, set `LOOPFRONT_TEST_EXE` to the absolute path of the extracted `Loopfront.exe`
 before running the desktop test command. Tests use temporary profiles. `LOOPFRONT_USER_DATA_DIR`
 is an optional absolute profile-directory override for isolated testing; leave it unset for normal play.

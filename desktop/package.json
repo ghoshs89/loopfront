@@ -7,6 +7,7 @@
   "author": "Loopfront contributors",
   "main": "main.cjs",
   "scripts": {
+    "icon": "node generate-icon.cjs",
     "start": "electron .",
     "test": "node ../node_modules/@playwright/test/cli.js test --config playwright.config.cjs",
     "pack:windows": "electron-builder --config builder.config.cjs --win zip --x64 --publish never",
@@ -18,6 +19,7 @@
   "devDependencies": {
     "@electron/asar": "4.3.2",
     "electron": "45.3.3",
-    "electron-builder": "26.18.0"
+    "electron-builder": "26.18.0",
+    "resedit": "1.7.2"
   }
 }

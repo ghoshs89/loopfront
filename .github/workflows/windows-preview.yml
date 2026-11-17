@@ -81,6 +81,9 @@ jobs:
           Expand-Archive $zip.FullName desktop/dist/verified
           node desktop/verify-package.cjs desktop/dist/verified
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $info = (Get-Item desktop/dist/verified/Loopfront.exe).VersionInfo
+          if ($info.ProductName -ne 'Loopfront' -or $info.FileDescription -ne 'Loopfront') { throw 'Missing Loopfront executable branding' }
+          if ($info.ProductVersion -notlike "0.1.$env:LOOPFRONT_BUILD_NUMBER*") { throw 'Incorrect executable version' }
           $hash = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $($zip.Name)" | Set-Content desktop/dist/SHA256SUMS.txt
           "LOOPFRONT_TEST_EXE=$((Resolve-Path desktop/dist/verified/Loopfront.exe).Path)" >> $env:GITHUB_ENV
