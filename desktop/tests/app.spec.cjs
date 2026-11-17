@@ -58,7 +58,7 @@ test('shared page, desktop metadata, parent gate and sandbox', async () => {
   if (process.env.LOOPFRONT_TEST_EXE) expect(preferences.devTools).toBe(false);
   await page.locator('#parentBtn').click();
   await answerGate(page);
-  await expect(page.locator('#verLabel')).toHaveText('Windows preview v' + metadata.desktop.version);
+  await expect(page.locator('#verLabel')).toContainText('Windows preview v' + metadata.desktop.version);
   await expect(page.locator('#updateBtn')).toBeHidden();
   await page.screenshot({ path: test.info().outputPath('desktop-parent.png') });
   expect(errors).toEqual([]);
@@ -79,6 +79,7 @@ test('keyboard play, Escape, focus loss, minimization and fullscreen', async () 
     globalThis.focusProbe = new BrowserWindow({ width: 200, height: 100, show: true });
     globalThis.focusProbe.focus();
   });
+  await expect.poll(() => application.evaluate(() => globalThis.focusProbe.isFocused())).toBe(true);
   await expect(page.locator('#pauseScreen')).toBeVisible();
   await application.evaluate(({ BrowserWindow }) => {
     globalThis.focusProbe.destroy(); BrowserWindow.getAllWindows()[0].focus();
@@ -89,9 +90,15 @@ test('keyboard play, Escape, focus loss, minimization and fullscreen', async () 
   await expect(page.locator('#pauseScreen')).toBeVisible();
   await application.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.restore(); w.focus(); });
   await expect(page.locator('#pauseScreen')).toBeVisible();
-  await page.keyboard.press('F11');
+  // Exercise Electron's native input path; CDP keyboard injection bypasses before-input-event.
+  const f11 = () => application.evaluate(({ BrowserWindow }) => {
+    const contents = BrowserWindow.getAllWindows()[0].webContents;
+    contents.sendInputEvent({ type: 'keyDown', keyCode: 'F11' });
+    contents.sendInputEvent({ type: 'keyUp', keyCode: 'F11' });
+  });
+  await f11();
   await expect.poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(true);
-  await page.keyboard.press('F11');
+  await f11();
   await expect.poll(() => application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen())).toBe(false);
   await page.screenshot({ path: test.info().outputPath('desktop-paused.png') });
 });
@@ -124,7 +131,15 @@ test('external navigation, popups, network requests and unknown resources are bl
   expect(await page.evaluate(() => window.open('https://example.com'))).toBeNull();
   await page.evaluate(() => { location.href = 'https://example.com'; });
   await page.waitForTimeout(200);
-  await expect(page).toHaveURL('loopfront://game/index.html');
+  // Chromium can report an empty pending frame URL to CDP after Electron cancels navigation.
+  // Check the actual committed URL and surviving document instead of that transient CDP value.
+  expect(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getURL())).toBe('loopfront://game/index.html');
+  expect(await page.evaluate(() => location.href)).toBe('loopfront://game/index.html');
+  // Locator auto-waits also inherit CDP's cancelled-navigation state; inspect the live DOM directly.
+  expect(await page.evaluate(() => {
+    const button = document.getElementById('playBtn');
+    return button.getBoundingClientRect().width > 0 && !document.getElementById('startScreen').classList.contains('hidden');
+  })).toBe(true);
   expect(application.windows()).toHaveLength(1);
   const blocked = await application.evaluate(async ({ session }) => {
     const results = [];

@@ -54,6 +54,17 @@ if (!app.requestSingleInstanceLock()) {
         if (input.type === 'keyDown' && !input.isAutoRepeat) win.setFullScreen(!win.isFullScreen());
       }
     });
+    // Native focus/minimize signals cover window managers that omit renderer blur events.
+    // Only fixed, local DOM events are dispatched; no renderer-controlled code or IPC is exposed.
+    const signal = type => {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        const script = type === 'pause' ? 'window.dispatchEvent(new Event("blur"))' : 'window.dispatchEvent(new Event("focus"))';
+        win.webContents.executeJavaScript(script).catch(() => {});
+      }
+    };
+    win.on('blur', () => signal('pause'));
+    win.on('minimize', () => signal('pause'));
+    win.on('focus', () => signal('resume'));
     await win.loadURL(PAGE);
     win.show();
   }).catch(error => { console.error(error); app.exit(1); });

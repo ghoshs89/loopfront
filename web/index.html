@@ -2494,7 +2494,9 @@ function refreshSteer() {
   $('helpText').textContent = settings.steer === 'stick'
     ? 'Drag anywhere like a joystick!'
     : (isTouchy() ? 'Hold your finger where you want to go!' : 'Use the mouse or arrow keys. Leave your land, draw a loop, come back home!');
-  if (window.LoopfrontDesktop) $('helpText').textContent += ' WASD also steers. Esc pauses. F11 toggles fullscreen.';
+  if (window.LoopfrontDesktop) $('helpText').textContent = settings.steer === 'stick'
+    ? 'Drag to steer; arrows and WASD also work. Esc pauses; F11 toggles fullscreen.'
+    : 'Mouse, arrows or WASD to steer. Esc pauses; F11 toggles fullscreen.';
 }
 function setSteer(v) { settings.steer = v; input.stickDown = false; saveSettings(); refreshSteer(); }
 function refreshSound() { toggleClass($('soundBtn'), 'muted', !settings.sound); }
@@ -2794,7 +2796,10 @@ function refreshParent() {
   $('updateStatus').textContent = '';
   $('updateNotes').textContent = '';
   let ver = 'Web version';
-  if (window.LoopfrontDesktop) ver = 'Windows preview v' + window.LoopfrontDesktop.version;
+  if (window.LoopfrontDesktop) {
+    hide($('updateBtn').closest('.setrow'));
+    ver = 'Windows preview v' + window.LoopfrontDesktop.version + ' · Download a new ZIP to update.';
+  }
   if (a && a.getVersion) { try { ver = 'Version v' + a.getVersion(); } catch (err) { ver = 'App version unknown'; } }
   $('verLabel').textContent = ver;
   $('resetBtn').textContent = 'Reset all progress';
