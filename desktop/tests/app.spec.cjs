@@ -62,8 +62,21 @@ test('shared page, desktop metadata, parent gate and sandbox', async () => {
   expect(policy).toContain("connect-src 'none'");
   expect(policy).toContain("frame-ancestors 'none'");
   // Electron can omit devTools from getLastWebPreferences(). Verify enforcement instead.
-  // Development builds provide a positive control: the same opening attempt must work there.
-  const tools = await application.evaluate(async ({ app, BrowserWindow }) => {
+  // The game's request filter can also block DevTools pages in development. Use an isolated
+  // test window as the positive control, without changing the production window or its policy.
+  const tools = await application.evaluate(async ({ app, BrowserWindow, session }) => {
+    const control = new BrowserWindow({ show: false, webPreferences: {
+      devTools: true, sandbox: true, nodeIntegration: false, contextIsolation: true,
+      session: session.fromPartition('devtools-positive-control')
+    } });
+    await control.loadURL('about:blank');
+    control.webContents.openDevTools({ mode: 'detach' });
+    const controlDeadline = Date.now() + 5000;
+    while (!control.webContents.isDevToolsOpened() && Date.now() < controlDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    const controlOpened = control.webContents.isDevToolsOpened();
+    control.destroy();
     const contents = BrowserWindow.getAllWindows()[0].webContents;
     let opened = false;
     const onOpened = () => { opened = true; };
@@ -73,11 +86,14 @@ test('shared page, desktop metadata, parent gate and sandbox', async () => {
     const isOpen = contents.isDevToolsOpened();
     contents.removeListener('devtools-opened', onOpened);
     contents.closeDevTools();
-    return { packaged: app.isPackaged, opened, isOpen };
+    return { packaged: app.isPackaged, opened, isOpen, controlOpened };
   });
   expect(tools.packaged).toBe(!!process.env.LOOPFRONT_TEST_EXE);
-  expect(tools.opened).toBe(!tools.packaged);
-  expect(tools.isOpen).toBe(!tools.packaged);
+  expect(tools.controlOpened).toBe(true);
+  if (tools.packaged) {
+    expect(tools.opened).toBe(false);
+    expect(tools.isOpen).toBe(false);
+  }
   await page.locator('#parentBtn').click();
   await answerGate(page);
   await expect(page.locator('#verLabel')).toContainText('Windows preview v' + metadata.desktop.version);
