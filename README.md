@@ -7,8 +7,8 @@ own and you are out. Pick a buddy, a colour and a name, then play against comput
 The game is a single offline web page (`web/index.html`). `android/` wraps it in a tiny Android app, and a
 GitHub Actions workflow builds the APK for you. `desktop/` wraps that same page in Electron for Windows.
 
-> **Windows preview:** this work is prepared on the `windows-desktop` branch. Once uploaded, its
-> [branch page](https://github.com/ghoshs89/loopfront/tree/windows-desktop) and workflow artifacts will be available.
+> **Windows preview:** available on the [`windows-desktop` branch](https://github.com/ghoshs89/loopfront/tree/windows-desktop),
+> proposed in [draft PR #7](https://github.com/ghoshs89/loopfront/pull/7). Downloads are uploaded only after all preview checks pass.
 > It is proposed for review, not a Windows release on `main`. This branch leaves the Android files,
 > Android workflow, current APK releases, and download links unchanged. Shared-page desktop hooks
 > would become part of Android's bundled page only after a future merge.
@@ -43,8 +43,7 @@ If a newer version exists, **Download update** opens the new APK; tap it to inst
 
 ## Windows desktop preview
 
-The GitHub download steps below apply after the branch is uploaded and its first workflow run succeeds.
-Until then, a locally built preview can be used by following steps 4 onward with its game ZIP.
+Use a successful workflow run; failed runs contain test reports but no playable download.
 
 1. Sign in to GitHub and open the [Windows preview workflow](https://github.com/ghoshs89/loopfront/actions/workflows/windows-preview.yml?query=branch%3Awindows-desktop).
 2. Choose a successful run for `windows-desktop`, then download its **loopfront-windows-x64-preview-N** artifact.

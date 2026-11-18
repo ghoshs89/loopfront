@@ -61,7 +61,23 @@ test('shared page, desktop metadata, parent gate and sandbox', async () => {
   });
   expect(policy).toContain("connect-src 'none'");
   expect(policy).toContain("frame-ancestors 'none'");
-  if (process.env.LOOPFRONT_TEST_EXE) expect(preferences.devTools).toBe(false);
+  // Electron can omit devTools from getLastWebPreferences(). Verify enforcement instead.
+  // Development builds provide a positive control: the same opening attempt must work there.
+  const tools = await application.evaluate(async ({ app, BrowserWindow }) => {
+    const contents = BrowserWindow.getAllWindows()[0].webContents;
+    let opened = false;
+    const onOpened = () => { opened = true; };
+    contents.once('devtools-opened', onOpened);
+    contents.openDevTools({ mode: 'detach' });
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const isOpen = contents.isDevToolsOpened();
+    contents.removeListener('devtools-opened', onOpened);
+    contents.closeDevTools();
+    return { packaged: app.isPackaged, opened, isOpen };
+  });
+  expect(tools.packaged).toBe(!!process.env.LOOPFRONT_TEST_EXE);
+  expect(tools.opened).toBe(!tools.packaged);
+  expect(tools.isOpen).toBe(!tools.packaged);
   await page.locator('#parentBtn').click();
   await answerGate(page);
   await expect(page.locator('#verLabel')).toContainText('Windows preview v' + metadata.desktop.version);
