@@ -1949,6 +1949,8 @@ function bigLand() {
 
   // ---- winning needs every tile ----
   const ownAllBut = (pl, freeTiles) => {
+    // start from nothing, so a random starting home can never cover a tile that should stay free
+    for (let i = 0; i < T.owner.length; i++) if (T.owner[i] === pl.id) { T.owner[i] = 0; T.counts[pl.id]--; }
     for (let row = 0; row < 56; row++) for (let col = 0; col < 56; col++) if (!freeTiles.some(([c, r2]) => c === col && r2 === row)) T.stampTileAt(pl, tc(col), tc(row), false);
   };
   p = classicStart(); clearPals();
