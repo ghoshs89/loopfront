@@ -1,0 +1,37 @@
+name: Windows preview
+
+# Manual preview build of the portable Windows ZIP (kept for 30 days as an Actions artifact, never
+# published). Pull requests and releases build Windows through "Build APK", so this no longer runs on
+# its own for pull requests and pushes.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Shared game checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run test:harness
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+
+  windows:
+    needs: web
+    uses: ./.github/workflows/windows-package.yml
+    with:
+      build_number: ${{ github.run_number }}
+      retention_days: 30

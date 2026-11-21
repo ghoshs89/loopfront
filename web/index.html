@@ -67,6 +67,7 @@
     position: absolute; left: 12px; bottom: 12px; width: 150px; height: 150px; border-radius: 50%;
     border: 4px solid var(--ink); background: #fff; box-shadow: var(--shadow);
   }
+  #minimap.square { border-radius: 18px; }
   #feed { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
   #feed .msg {
     padding: 6px 14px; border-radius: 999px; font-size: 15px; background: #fff; border: 3px solid var(--ink);
@@ -161,6 +162,22 @@
   .steerrow { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 0 0 12px; }
   .steerrow .field { margin: 0; }
   .steerrow .round.sel { background: var(--sun); }
+  .moderow { display: flex; gap: 8px; margin: 0 0 12px; }
+  .moderow button { flex: 1; min-height: 56px; border-radius: 16px; border: 3px solid var(--ink); background: #fff; font-size: 20px; }
+  .moderow button.sel { background: var(--sun); }
+  #characters button.locked { background: #eceff4; }
+  #characters button.locked canvas { opacity: 0.55; }
+  #avatarMsg { min-height: 1.3em; font-size: 15px; opacity: 0.85; }
+  .chlist { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 12px; text-align: left; }
+  .chrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 16px; border: 3px solid var(--ink); background: #f4fbff; }
+  .chrow .chtext { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }
+  .chrow .chname { font-size: 19px; }
+  .chrow .chgoal { font-size: 15px; opacity: 0.75; }
+  .chmark { position: relative; width: 30px; height: 30px; flex: none; border-radius: 50%; border: 3px solid var(--ink); background: #fff; }
+  .chmark.done { background: #7ae582; }
+  .chmark.done::after { content: ''; position: absolute; left: 8px; top: 2px; width: 7px; height: 14px; border: solid #fff; border-width: 0 4px 4px 0; transform: rotate(45deg); }
+  .chrow button { min-width: 84px; min-height: 56px; border-radius: 14px; border: 3px solid var(--ink); background: var(--green); font-size: 18px; }
+  #goalPill { padding: 3px 12px; border-width: 3px; border-radius: 18px; font-size: 15px; }
 
   #ovCreature, #breakCreature { width: 120px; height: 120px; display: block; margin: 0 auto; }
   #ovCause { min-height: 1.3em; opacity: 0.8; }
@@ -254,6 +271,7 @@
       </div>
       <div id="hudExtras">
         <div id="heartsPanel" class="panel" aria-label="Hearts left"><canvas id="heartsCv" width="132" height="32"></canvas></div>
+        <div id="goalPill" class="panel hidden"></div>
         <div id="powerPill" class="panel hidden"><span id="powerName"></span><span id="powerBarBox"><i id="powerBar"></i></span></div>
       </div>
     </div>
@@ -271,6 +289,7 @@
     <h1 class="logo"><span style="color:#ef476f">L</span><span style="color:#f77f00">O</span><span style="color:#ffd23f">O</span><span style="color:#06d6a0">P</span><span style="color:#118ab2">F</span><span style="color:#8338ec">R</span><span style="color:#ff70a6">O</span><span style="color:#ef476f">N</span><span style="color:#f77f00">T</span></h1>
     <div class="field">Pick your buddy</div>
     <div id="characters" class="row"></div>
+    <div id="avatarMsg"></div>
     <div class="field">Pick a colour</div>
     <div id="swatches" class="row"></div>
     <div class="namerow">
@@ -288,9 +307,16 @@
         <svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="none" stroke="#2b2d42" stroke-width="3"/><circle cx="21" cy="12" r="5.5" fill="#ffd23f" stroke="#2b2d42" stroke-width="2.5"/></svg>
       </button>
     </div>
+    <div class="moderow" role="group" aria-label="Game mode">
+      <button id="modeIsland" class="sel" type="button" aria-pressed="true">Island</button>
+      <button id="modeClassic" type="button" aria-pressed="false">Classic</button>
+    </div>
     <button id="playBtn" class="btn" type="button">PLAY</button>
     <div class="icons">
       <button id="howBtn" class="round" type="button" aria-label="How to play">?</button>
+      <button id="challengesBtn" class="round" type="button" aria-label="Challenges">
+        <svg viewBox="0 0 32 32"><path d="M10 5 H22 V12 C22 17 19 19 16 19 C13 19 10 17 10 12 Z" fill="#ffd23f" stroke="#2b2d42" stroke-width="2.5" stroke-linejoin="round"/><path d="M10 8 H5 C5 13 8 14 10 14 M22 8 H27 C27 13 24 14 22 14" fill="none" stroke="#2b2d42" stroke-width="2.5"/><path d="M16 19 V24 M10 27 H22 L20 24 H12 Z" fill="#ffd23f" stroke="#2b2d42" stroke-width="2.5" stroke-linejoin="round"/></svg>
+      </button>
       <button id="starsBtn" class="round" type="button" aria-label="My stars">
         <svg viewBox="0 0 32 32"><polygon points="16,3 20,12 30,13 22,20 25,30 16,24 7,30 10,20 2,13 12,12" fill="#ffd23f" stroke="#2b2d42" stroke-width="2.5" stroke-linejoin="round"/></svg>
       </button>
@@ -356,6 +382,39 @@
       </div>
     </div>
     <button id="howOkBtn" class="btn green" type="button">Got it!</button>
+  </div>
+</div>
+
+<div id="classicHowScreen" class="overlay hidden">
+  <div class="card panel">
+    <h2>Classic</h2>
+    <div class="steps">
+      <div class="step">
+        <svg viewBox="0 0 120 80"><path d="M60 12 L72 28 H48 Z M60 68 L72 52 H48 Z M24 40 L40 28 V52 Z M96 40 L80 28 V52 Z" fill="#2b2d42"/><circle cx="60" cy="40" r="10" fill="#ffd23f" stroke="#2b2d42" stroke-width="3"/></svg>
+        Swipe or press arrows
+      </div>
+      <div class="step">
+        <svg viewBox="0 0 120 80"><path d="M10 10 H110 M10 30 H110 M10 50 H110 M10 70 H110 M10 10 V70 M30 10 V70 M50 10 V70 M70 10 V70 M90 10 V70 M110 10 V70" stroke="#c9b98f" stroke-width="2"/><path d="M20 60 V20 H80 V40" fill="none" stroke="#ef476f" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/></svg>
+        Turns happen on the squares
+      </div>
+      <div class="step">
+        <svg viewBox="0 0 120 80"><path d="M12 50 H108" stroke="#ef476f" stroke-width="8" stroke-linecap="round"/><circle cx="60" cy="22" r="13" fill="#8338ec" stroke="#2b2d42" stroke-width="3"/><polygon points="51,38 69,38 60,52" fill="#2b2d42"/></svg>
+        Your trail can be crossed
+      </div>
+      <div class="step">
+        <svg viewBox="0 0 120 80"><rect x="96" y="6" width="12" height="68" fill="#ef476f" stroke="#2b2d42" stroke-width="3"/><circle cx="66" cy="40" r="13" fill="#06d6a0" stroke="#2b2d42" stroke-width="3"/><path d="M82 40 H92" stroke="#2b2d42" stroke-width="4"/></svg>
+        Walls end the round
+      </div>
+    </div>
+    <button id="classicOkBtn" class="btn green" type="button">Let's go!</button>
+  </div>
+</div>
+
+<div id="challengeScreen" class="overlay hidden">
+  <div class="card panel">
+    <h2>Challenges</h2>
+    <div id="challengeList" class="chlist"></div>
+    <button id="challengeCloseBtn" class="btn" type="button">Close</button>
   </div>
 </div>
 
@@ -483,6 +542,10 @@ const HOME_R = 58;                  // starting territory radius
 const BOT_COUNT = 10;
 const SLOTS = BOT_COUNT + 1;
 const WALL_R2 = (ARENA_R - HEAD_R + 2) * (ARENA_R - HEAD_R + 2);
+// Playable land: cells a legal trail can always reach and claim. A head is turned back (Easy) or stopped
+// (Normal/Hard) near the edge, and a trail only paints 6.5 px around its line, so the outermost ring of the
+// drawn island could never be owned by anyone. Counting it made the whole-island win impossible.
+const PLAY_R = ARENA_R - HEAD_R - 2;
 const HEADON_R2 = (HEAD_R * 1.6) * (HEAD_R * 1.6);
 const IDLE_MS = 20000;              // menus stop animating after this long without input
 const INK = '#2b2d42';
@@ -509,6 +572,29 @@ const DIFFICULTY = {
   hard:   { bots: 10, speed: 1.0,  aggr: 1,   bounce: false, shield: 0, hearts: 1, gentle: false, pickGap: [16, 26] }
 };
 const RANK_COLORS = ['#ffd23f', '#cfd8dc', '#e0a064'];
+
+// Classic: an optional mode with crisp four-way turns on a square board of tiles, one life and walls
+// that end the round. The family's Island difficulty is left untouched.
+const CLASSIC = { bots: 6, speed: 1, aggr: 0.7, bounce: false, shield: 0, hearts: 1, gentle: false, pickGap: null, classic: true };
+const TILE = 30, CLASSIC_TILES = 56, CLASSIC_SPEED = 165;   // a tile is exactly 6 x 6 ownership cells
+const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];             // east, south, west, north on screen
+const DIR_ANGLE = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
+const KEY_DIR = { right: 0, down: 1, left: 2, up: 3 };
+
+// Challenges: small Classic boards with a fixed layout, so Retry is always the same puzzle.
+// [column, row, direction] with direction 0 east, 1 south, 2 west, 3 north.
+const CHALLENGES = [
+  { id: 'rect1', name: 'First Rectangle', text: 'Close one loop', tiles: 16, start: [7, 9, 3], pals: [] },
+  { id: 'half', name: 'Half the Board', text: 'Own half the board', tiles: 20, start: [4, 10, 0], pals: [[15, 4, 2], [15, 15, 2]], target: 50 },
+  { id: 'full', name: 'Full Board', text: 'Own every tile', tiles: 16, start: [3, 8, 0], pals: [[12, 3, 2], [12, 12, 2]], target: 100 }
+];
+// Buddies earned by doing something special; once earned they stay.
+const AVATARS = [
+  { id: 'owl', name: 'Owl', feat: 'Draw a loop in Classic' },
+  { id: 'dino', name: 'Dino', feat: 'Own 25% in Classic' },
+  { id: 'unicorn', name: 'Unicorn', feat: 'Finish Full Board' }
+];
+const AVATAR_IDS = AVATARS.map(a => a.id);
 
 // Dress-up shop: fixed, visible prices in coins earned by playing. No real money, no timers, no random items.
 const SHOP = {
@@ -588,8 +674,8 @@ const show = el => el.classList.remove('hidden');
 const hide = el => el.classList.add('hidden');
 const isOpen = el => !el.classList.contains('hidden');
 const toggleClass = (el, cls, on) => { if (on) el.classList.add(cls); else el.classList.remove(cls); };
-const doneScreen = $('doneScreen');
-const OVERLAYS = [howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, doneScreen, gateScreen, parentScreen, overScreen, startScreen];
+const doneScreen = $('doneScreen'), classicHowScreen = $('classicHowScreen'), challengeScreen = $('challengeScreen');
+const OVERLAYS = [challengeScreen, classicHowScreen, howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, doneScreen, gateScreen, parentScreen, overScreen, startScreen];
 
 let vw = 1, vh = 1, dpr = 1;
 function resize() {
@@ -611,12 +697,83 @@ const mark = new Uint8Array(N * N);        // scratch for flood fill ("reachable
 const inArena = new Uint8Array(N * N);
 const counts = new Int32Array(SLOTS + 2);  // cells owned per id
 let arenaCells = 0;
-for (let y = 0; y < N; y++) {
-  for (let x = 0; x < N; x++) {
-    const dx = (x + 0.5) * CELL - CENTER, dy = (y + 0.5) * CELL - CENTER;
-    if (dx * dx + dy * dy <= ARENA_R * ARENA_R) { inArena[y * N + x] = 1; arenaCells++; }
+
+/* ---- board geometry: every "where is the edge?" question goes through here ----
+   circle: the island (radius = drawn edge). square: a board with straight walls (half = half of a side).
+   For both, playable land ends HEAD_R - 2 inside the drawn edge, exactly where a head is bounced or stopped,
+   so every playable cell can be painted by a legal trail (see PLAY_R). */
+let board = null;
+function makeBoard(shape, size, tile) {
+  if (shape === 'square') {
+    const half = Math.min(size / 2, CENTER - 40), play = half - HEAD_R - 2;
+    return { shape: 'square', half, play, origin: CENTER - play, tile: tile || 0 };
+  }
+  const r = size ? Math.min(size / 2, ARENA_R) : ARENA_R;
+  return { shape: 'circle', r, play: r - HEAD_R - 2 };
+}
+// distance from a point to the drawn edge, positive inside
+function edgeDist(x, y) {
+  const dx = x - CENTER, dy = y - CENTER;
+  return board.shape === 'square' ? board.half - Math.max(Math.abs(dx), Math.abs(dy)) : board.r - Math.hypot(dx, dy);
+}
+const edgeSize = () => (board.shape === 'square' ? board.half : board.r);
+function inPlay(x, y) {
+  const dx = x - CENTER, dy = y - CENTER;
+  return board.shape === 'square'
+    ? Math.abs(dx) <= board.play && Math.abs(dy) <= board.play
+    : dx * dx + dy * dy <= board.play * board.play;
+}
+// a random point at least `margin` inside the drawn edge (uniform over the area)
+function randomPoint(margin) {
+  const lim = Math.max(0, edgeSize() - margin);
+  if (board.shape === 'square') return { x: CENTER + rand(-lim, lim), y: CENTER + rand(-lim, lim) };
+  const a = Math.random() * TAU, r = Math.sqrt(Math.random()) * lim;
+  return { x: CENTER + Math.cos(a) * r, y: CENTER + Math.sin(a) * r };
+}
+// outward wall normal at a point near the edge, and the point pulled back onto playable land
+function wallNormal(x, y) {
+  const dx = x - CENTER, dy = y - CENTER;
+  if (board.shape === 'square') {
+    if (Math.abs(dx) >= Math.abs(dy)) return { nx: Math.sign(dx) || 1, ny: 0 };
+    return { nx: 0, ny: Math.sign(dy) || 1 };
+  }
+  const d = Math.hypot(dx, dy) || 1;
+  return { nx: dx / d, ny: dy / d };
+}
+function clampToPlay(e) {
+  if (board.shape === 'square') {
+    e.x = clamp(e.x, CENTER - board.play, CENTER + board.play);
+    e.y = clamp(e.y, CENTER - board.play, CENTER + board.play);
+    return;
+  }
+  const dx = e.x - CENTER, dy = e.y - CENTER, d = Math.hypot(dx, dy) || 1;
+  if (d > board.play) { e.x = CENTER + dx / d * board.play; e.y = CENTER + dy / d * board.play; }
+}
+// the board outline as a canvas path (inset grows it outward), drawn at scale k
+function boardPath(c, inset, k) {
+  c.beginPath();
+  if (board.shape === 'square') {
+    const h = board.half + inset;
+    c.rect((CENTER - h) * k, (CENTER - h) * k, 2 * h * k, 2 * h * k);
+  } else {
+    c.arc(CENTER * k, CENTER * k, (board.r + inset) * k, 0, TAU);
   }
 }
+// switch board; the ownership mask and the percentage denominator follow it
+function setBoard(b) {
+  if (board && board.shape === b.shape && board.r === b.r && board.half === b.half && board.tile === b.tile) return;
+  board = b;
+  arenaCells = 0;
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const v = inPlay((x + 0.5) * CELL, (y + 0.5) * CELL) ? 1 : 0;
+      inArena[y * N + x] = v;
+      arenaCells += v;
+    }
+  }
+  toggleClass(mm, 'square', b.shape === 'square');      // the minimap card follows the board's shape
+}
+setBoard(makeBoard('circle'));
 
 // Territory is drawn into a 1px-per-cell offscreen canvas, then scaled up (smoothed) each frame.
 const terr = document.createElement('canvas');
@@ -709,6 +866,31 @@ function addTrailPoint(e, x, y) {
 /* ---- rasterising into the grid ---- */
 const stampList = [];   // cells newly claimed by the trail during a capture
 
+// Classic: centre of the tile containing coordinate v (on either axis)
+const tileCentre = v => board.origin + (Math.floor((v - board.origin) / TILE) + 0.5) * TILE;
+// Classic: own the whole tile (6 x 6 cells) containing a point, so land is always made of whole tiles
+function stampTileAt(e, wx, wy, track) {
+  const per = TILE / CELL, id = e.id;
+  const cx0 = Math.round(board.origin / CELL) + Math.floor((wx - board.origin) / TILE) * per;
+  const cy0 = Math.round(board.origin / CELL) + Math.floor((wy - board.origin) / TILE) * per;
+  if (cx0 < 0 || cy0 < 0 || cx0 + per > N || cy0 + per > N) return;
+  for (let y = cy0; y < cy0 + per; y++) {
+    for (let x = cx0; x < cx0 + per; x++) {
+      const i = y * N + x;
+      if (!inArena[i]) continue;
+      const old = owner[i];
+      if (old === id) continue;
+      counts[old]--; counts[id]++; owner[i] = id;
+      if (track) stampList.push(i);
+    }
+  }
+  if (cx0 < e.bx0) e.bx0 = cx0;
+  if (cy0 < e.by0) e.by0 = cy0;
+  if (cx0 + per - 1 > e.bx1) e.bx1 = cx0 + per - 1;
+  if (cy0 + per - 1 > e.by1) e.by1 = cy0 + per - 1;
+  markDirty(cx0, cy0, cx0 + per - 1, cy0 + per - 1);
+}
+
 function stampDisc(e, wx, wy, r, track) {
   const id = e.id, r2 = r * r;
   const cx0 = Math.max(0, Math.floor((wx - r) / CELL)), cx1 = Math.min(N - 1, Math.floor((wx + r) / CELL));
@@ -799,14 +981,15 @@ function capture(e) {
   // 1. rasterise the trail (start point .. head) into owned cells
   const n = e.tx.length;
   let lx = e.tx[0], ly = e.ty[0];
-  stampDisc(e, lx, ly, STAMP_R, true);
+  const paint = diff.classic ? (px, py) => stampTileAt(e, px, py, true) : (px, py) => stampDisc(e, px, py, STAMP_R, true);
+  paint(lx, ly);
   for (let i = 1; i <= n; i++) {
     const x = i < n ? e.tx[i] : e.x, y = i < n ? e.ty[i] : e.y;
     const d = Math.hypot(x - lx, y - ly);
     const steps = Math.max(1, Math.ceil(d / (CELL * 0.5)));
     for (let s = 1; s <= steps; s++) {
       const t = s / steps;
-      stampDisc(e, lx + (x - lx) * t, ly + (y - ly) * t, STAMP_R, true);
+      paint(lx + (x - lx) * t, ly + (y - ly) * t);
     }
     lx = x; ly = y;
   }
@@ -835,6 +1018,7 @@ function capture(e) {
       roundLoops++;
       missionEvent('loops5', 1);
       missionEvent('bigloop1', gained);
+      if (diff.classic && !diff.challenge) unlockAvatar('owl');
       addFloat(e.x, e.y - 34, '+' + gained.toFixed(2) + '%', e.hex);
       if (roundLoops % 3 === 0) addFloat(e.x, e.y - 62, 'Great loop!', '#8338ec');
       confetti(e.x, e.y, 24);
@@ -847,28 +1031,34 @@ function capture(e) {
 function findSpawn() {
   for (let attempt = 0; attempt < 240; attempt++) {
     const relax = attempt / 240;
-    const a = Math.random() * TAU, r = Math.sqrt(Math.random()) * (ARENA_R - 240);
-    const x = CENTER + Math.cos(a) * r, y = CENTER + Math.sin(a) * r;
+    let { x, y } = randomPoint(diff.classic ? 4 * TILE + 13 : Math.min(240, edgeSize() * 0.6));
+    if (diff.classic) { x = tileCentre(x); y = tileCentre(y); }    // Classic: always on a tile centre
     const minHead = 460 * (1 - relax);
     let ok = true;
     for (const o of entities) {
       if (o.alive && Math.hypot(o.x - x, o.y - y) < minHead) { ok = false; break; }
     }
     if (!ok) continue;
-    if (attempt < 200) {
-      // the home disc (plus a margin) must be free land
-      const pr = HOME_R + 50 * (1 - relax);
-      for (let k = 0; k < 13 && ok; k++) {
-        const pa = (k / 12) * TAU, rr = k === 12 ? 0 : pr;
-        const cx = clamp(((x + Math.cos(pa) * rr) / CELL) | 0, 0, N - 1);
-        const cy = clamp(((y + Math.sin(pa) * rr) / CELL) | 0, 0, N - 1);
-        if (owner[cy * N + cx] !== 0) ok = false;
-      }
-      if (!ok) continue;
-    }
+    // the whole home disc (plus a shrinking margin) must be free land: a newcomer never takes anyone's land,
+    // so a nearly finished island stays finishable (when there is no room the pal simply waits)
+    if (!discFree(x, y, diff.classic ? 2.6 * TILE : HOME_R + 50 * (1 - relax))) continue;
     return { x, y };
   }
   return null;
+}
+
+function discFree(wx, wy, r) {
+  const r2 = r * r;
+  const cx0 = Math.max(0, Math.floor((wx - r) / CELL)), cx1 = Math.min(N - 1, Math.floor((wx + r) / CELL));
+  const cy0 = Math.max(0, Math.floor((wy - r) / CELL)), cy1 = Math.min(N - 1, Math.floor((wy + r) / CELL));
+  for (let y = cy0; y <= cy1; y++) {
+    const dy = (y + 0.5) * CELL - wy;
+    for (let x = cx0; x <= cx1; x++) {
+      const dx = (x + 0.5) * CELL - wx;
+      if (dx * dx + dy * dy <= r2 && owner[y * N + x] !== 0) return false;
+    }
+  }
+  return true;
 }
 
 function newAI() {
@@ -879,8 +1069,8 @@ function newAI() {
   };
 }
 
-function spawnEntity(e) {
-  const p = findSpawn();
+function spawnEntity(e, at) {
+  const p = at || findSpawn();
   if (!p) return false;
   e.alive = true;
   e.x = e.px = p.x; e.y = e.py = p.y;
@@ -888,11 +1078,21 @@ function spawnEntity(e) {
   e.angle = e.targetAngle = Math.atan2(CENTER - p.y, CENTER - p.x) + rand(-1.3, 1.3);
   clearTrail(e);
   e.kills = 0; e.bornAt = simTime; e.doom = null; e.inOwn = true; e.respawnAt = 0;
-  e.speed = e.isPlayer ? SPEED : SPEED * diff.speed;
+  e.speed = diff.classic ? CLASSIC_SPEED : e.isPlayer ? SPEED : SPEED * diff.speed;
+  if (diff.classic) {
+    // start on a tile centre, facing the middle of the board along a straight line
+    const tx = CENTER - p.x, ty = CENTER - p.y;
+    e.dir = Math.abs(tx) >= Math.abs(ty) ? (tx >= 0 ? 0 : 2) : (ty >= 0 ? 1 : 3);
+    e.angle = e.targetAngle = DIR_ANGLE[e.dir];
+    e.pend = -1;
+    if (at && at.dir !== undefined) { e.dir = at.dir; e.angle = e.targetAngle = DIR_ANGLE[e.dir]; }
+  }
   e.shieldUntil = e.isPlayer ? simTime + diff.shield : 0;
   e.wowUntil = 0; e.bumpAt = -9;
   e.bx0 = N; e.by0 = N; e.bx1 = -1; e.by1 = -1;
-  stampDisc(e, p.x, p.y, HOME_R, false);
+  if (diff.classic) {
+    for (let ty = -1; ty <= 1; ty++) for (let tx = -1; tx <= 1; tx++) stampTileAt(e, p.x + tx * TILE, p.y + ty * TILE, false);
+  } else stampDisc(e, p.x, p.y, HOME_R, false);
   e.ai = e.isPlayer ? null : newAI();
   return true;
 }
@@ -969,7 +1169,7 @@ const parentCfg = { difficulty: 'easy', breakMin: 30, saver: false, lockUntil: 0
 // today's play, for the daily limit and the grown-ups summary (a separate key so progress resets never touch it)
 const usage = { day: -1, sec: 0, extraSec: 0, rounds: 0, best: 0 };
 let usageDirty = false, usageSavedSec = 0;
-const progress = { best: 0, rounds: 0, stars: {}, coins: 0, owned: {}, coinsEarned: 0, bought: 0,
+const progress = { best: 0, classicBest: 0, rounds: 0, stars: {}, challenges: {}, avatars: {}, coins: 0, owned: {}, coinsEarned: 0, bought: 0,
                    mission: { day: -1, done: false, count: 0 }, streak: 0, missionsDone: 0, lastDoneDay: 0 };
 
 const particles = [];
@@ -995,9 +1195,10 @@ function loadStore() {
   if (s && typeof s === 'object') {
     if (typeof s.name === 'string' && s.name !== 'You') settings.name = s.name.slice(0, 14);
     if (PLAYER_COLORS.indexOf(s.color) >= 0) settings.color = s.color;
-    if (CHARACTERS.indexOf(s.character) >= 0) settings.character = s.character;
+    if (CHARACTERS.indexOf(s.character) >= 0 || AVATAR_IDS.indexOf(s.character) >= 0) settings.character = s.character;
     if (typeof s.sound === 'boolean') settings.sound = s.sound;
     if (typeof s.seenHowTo === 'boolean') settings.seenHowTo = s.seenHowTo;
+    if (typeof s.seenClassic === 'boolean') settings.seenClassic = s.seenClassic;
     if (s.steer === 'finger' || s.steer === 'stick') settings.steer = s.steer;
     if (typeof s.hat === 'string' && catalogItem('hats', s.hat)) settings.hat = s.hat;
     if (typeof s.trail === 'string' && catalogItem('trails', s.trail)) settings.trail = s.trail;
@@ -1022,6 +1223,7 @@ function loadStore() {
   const g = readJSON('loopfront.progress');
   if (g && typeof g === 'object') {
     if (typeof g.best === 'number' && isFinite(g.best)) progress.best = Math.max(0, g.best);
+    if (typeof g.classicBest === 'number' && isFinite(g.classicBest)) progress.classicBest = Math.max(0, g.classicBest);
     if (typeof g.rounds === 'number' && isFinite(g.rounds)) progress.rounds = Math.max(0, g.rounds | 0);
     if (g.stars && typeof g.stars === 'object') {
       for (const k of Object.keys(g.stars)) if (g.stars[k] === true) progress.stars[k] = true;
@@ -1043,14 +1245,30 @@ function loadStore() {
       }
     }
   }
+  if (g && typeof g === 'object') {
+    for (const [field, ids] of [['challenges', CHALLENGES.map(c => c.id)], ['avatars', AVATAR_IDS]]) {
+      const src = g[field];
+      if (src && typeof src === 'object') for (const k of Object.keys(src)) if (src[k] === true && ids.indexOf(k) >= 0) progress[field][k] = true;
+    }
+  }
+  if (AVATAR_IDS.indexOf(settings.character) >= 0 && !progress.avatars[settings.character]) settings.character = 'cat';   // not earned yet
   // what is worn must be owned: anything tampered with or no longer available falls back to the free default
   for (const tab of Object.keys(SHOP)) {
     if (!owns(tab, settings[SHOP_SLOT[tab]])) settings[SHOP_SLOT[tab]] = SHOP[tab][0].id;
   }
 }
 
-function startMatch(withPlayer) {
-  diff = DIFFICULTY[parentCfg.difficulty] || DIFFICULTY.easy;
+let selectedMode = 'island';     // the start-screen choice; every launch begins on Island
+let nextKind = { mode: 'island', id: null };   // what Play / Retry will start
+function startMatch(withPlayer, modeName, challengeId) {
+  // the rules are a snapshot taken here, so nothing on a menu can change a round in progress
+  const ch = withPlayer && modeName === 'challenge' ? CHALLENGES.find(c => c.id === challengeId) || null : null;
+  const classicRound = !!withPlayer && (modeName === 'classic' || !!ch);
+  diff = ch ? Object.assign({}, CLASSIC, { bots: ch.pals.length, aggr: 0.35, challenge: ch })
+            : classicRound ? CLASSIC : (DIFFICULTY[parentCfg.difficulty] || DIFFICULTY.easy);
+  if (ch) setBoard(makeBoard('square', 2 * (ch.tiles * TILE / 2 + HEAD_R + 2), TILE));
+  else if (classicRound) setBoard(makeBoard('square', 2 * (CLASSIC_TILES * TILE / 2 + HEAD_R + 2), TILE));
+  else if (board.tile) setBoard(makeBoard('circle'));
   resetGrid();
   simTime = 0;
   particles.length = 0; floats.length = 0;
@@ -1071,7 +1289,7 @@ function startMatch(withPlayer) {
     player.character = settings.character;
     player.hat = settings.hat;
     setColor(player, settings.color);
-    spawnEntity(player);
+    spawnEntity(player, ch ? fixedSpot(ch.start) : null);
   }
   const wanted = withPlayer ? diff.bots : diff.bots + 1;
   let ci = 0;
@@ -1082,6 +1300,7 @@ function startMatch(withPlayer) {
     e.character = pick(CHARACTERS);
     e.hat = Math.random() < 0.35 ? pick(HAT_IDS) : 'none';          // pals sometimes wear hats too
     setColor(e, colors[ci % colors.length]);
+    if (ch) { spawnEntity(e, fixedSpot(ch.pals[ci])); ci++; continue; }
     ci++;
     if (!spawnEntity(e)) e.respawnAt = simTime + 1;
   }
@@ -1089,7 +1308,7 @@ function startMatch(withPlayer) {
   pendingEnd = null; inStep = false;
   hearts = withPlayer ? diff.hearts : 0;
   pickups.length = 0; zoomUntil = 0; bubbleUntil = 0; freezeUntil = 0; roundPower = 0;
-  nextPickupAt = simTime + rand(diff.pickGap[0], diff.pickGap[1]);
+  nextPickupAt = diff.pickGap ? simTime + rand(diff.pickGap[0], diff.pickGap[1]) : Infinity;
   spectate = null;
   if (player && player.alive) { cam.x = player.x; cam.y = player.y; }
   input.mode = 'none'; input.stickDown = false; input.heading = null; releaseKeys();
@@ -1193,7 +1412,7 @@ const GOALS = [
 // Awards any goals now reached. `silent` is the end-of-round pass: it works even though the player is
 // no longer alive, records the star for the results screen, and skips the floating text and sound.
 function checkStars(silent) {
-  if (!player) return;
+  if (!player || diff.challenge) return;
   for (const g of GOALS) {
     if (progress.stars[g.id] || !g.ok()) continue;
     progress.stars[g.id] = true;
@@ -1237,6 +1456,7 @@ function syncMissionDay() {
 
 // progress events from play: counted ones add up, "best so far" ones keep the largest value
 function missionEvent(id, n) {
+  if (diff.challenge) return;                       // daily missions belong to regular play
   const m = progress.mission;
   if (m.day < 0 || m.done) return;
   const ms = missionFor(m.day);
@@ -1300,6 +1520,92 @@ function refreshMission() {
   $('missionStreak').textContent = st >= 2 ? st + ' days in a row' : '';
 }
 
+/* ---- challenges ---- */
+function fixedSpot([col, row, dir]) {
+  return { x: board.origin + (col + 0.5) * TILE, y: board.origin + (row + 0.5) * TILE, dir };
+}
+function challengeMet(ch, pct) {
+  if (ch.id === 'rect1') return roundLoops >= 1;
+  if (ch.target >= 100) return counts[player.id] >= arenaCells;
+  return pct >= ch.target;
+}
+function challengeGoalText(ch) {
+  if (ch.id === 'rect1') return 'Goal: close one loop';
+  const now = player ? pctOf(player) : 0;
+  return 'Goal ' + ch.target + '%: now ' + now.toFixed(ch.target >= 100 ? 2 : 1) + '%';
+}
+// The end of a challenge round: one result, no coins, stars, records or missions.
+function endChallenge(pct, killer, cause) {
+  const ch = diff.challenge;
+  const success = cause === 'goal' || cause === 'win';
+  mode = 'over';
+  pendingEnd = null;
+  setAwake(false);
+  if (success) {
+    if (!progress.challenges[ch.id]) { progress.challenges[ch.id] = true; saveProgress(); }
+    if (ch.id === 'full') unlockAvatar('full-board');
+  }
+  flushUsage();
+  const who = killer ? killer.name : 'Someone';
+  const causes = {
+    wall: 'You bumped into the wall.', self: 'You ran over your own trail.', trail: who + ' crossed your trail.',
+    headon: 'You bumped into ' + who + '.', swallowed: who + ' took all your land.'
+  };
+  $('ovTitle').textContent = success ? 'CHALLENGE DONE!' : 'Oops!';
+  $('ovCause').textContent = success ? 'You finished ' + ch.name + '!' : (causes[cause] || '');
+  $('ovPct').textContent = pct.toFixed(2) + '%';
+  $('ovKills').textContent = String(player.kills);
+  $('ovTime').textContent = fmtTime(simTime - player.bornAt);
+  $('ovBest').textContent = Math.max(bestPct, pct).toFixed(2) + '%';
+  hide($('ovStars')); hide($('ovCoins'));
+  $('againBtn').textContent = 'RETRY';
+  $('menuBtn').textContent = 'Challenges';
+  const g = $('ovCreature').getContext('2d');
+  g.clearRect(0, 0, 160, 160);
+  drawCreature(g, 80, 100, 44, player.character, player.hex, Math.PI / 2, success ? 'happy' : 'sad', true, player.hat);
+  sfx(success ? 'star' : 'oops');
+  clearTimeout(overTimer);
+  overTimer = setTimeout(() => { if (mode === 'over') show(overScreen); }, success ? 100 : 650);
+}
+function openChallenges() {
+  const list = $('challengeList');
+  list.textContent = '';
+  for (const ch of CHALLENGES) {
+    const row = document.createElement('div');
+    row.className = 'chrow';
+    const mark = document.createElement('span');
+    mark.className = progress.challenges[ch.id] ? 'chmark done' : 'chmark';
+    const text = document.createElement('div');
+    text.className = 'chtext';
+    const nm = document.createElement('span'); nm.className = 'chname'; nm.textContent = ch.name;
+    const goal = document.createElement('span'); goal.className = 'chgoal'; goal.textContent = ch.text;
+    text.appendChild(nm); text.appendChild(goal);
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.textContent = 'Play';
+    play.setAttribute('aria-label', 'Play ' + ch.name);
+    play.addEventListener('click', () => { nextKind = { mode: 'challenge', id: ch.id }; requestStart(true); });
+    row.appendChild(mark); row.appendChild(text); row.appendChild(play);
+    list.appendChild(row);
+  }
+  show(challengeScreen);
+}
+
+/* ---- earnable buddies ---- */
+function unlockAvatar(feat) {
+  const id = feat === 'full-board' ? 'unicorn' : feat;
+  if (AVATAR_IDS.indexOf(id) < 0 || progress.avatars[id]) return;   // once only
+  progress.avatars[id] = true;
+  saveProgress();
+  if (mode === 'playing' && player) { addFloat(player.x, player.y - 90, 'New buddy!', '#06a77d'); confetti(player.x, player.y, 24); }
+  sfx('star');
+  refreshChars();
+}
+function avatarProgress(id) {
+  if (id === 'dino') return ' (best ' + progress.classicBest.toFixed(2) + '%)';
+  return '';
+}
+
 // Goals that are not tied to one round (coins, shopping). Never pays coins itself, so there is no loop.
 function checkLifetimeStars() {
   const got = [];
@@ -1317,9 +1623,11 @@ function checkLifetimeStars() {
 // the all-time best actually increases, so ordinary frames never touch storage.
 function noteBest(pct) {
   if (pct > bestPct) bestPct = pct;
+  if (diff.challenge) return;                       // challenge scores never touch the records
   if (bestPct > usage.best) { usage.best = bestPct; usageDirty = true; }
-  if (bestPct > progress.best) {
-    progress.best = bestPct;
+  const key = diff.classic ? 'classicBest' : 'best';      // Island keeps the original record
+  if (bestPct > progress[key]) {
+    progress[key] = bestPct;
     saveProgress();
     refreshBest();
   }
@@ -1374,7 +1682,7 @@ function kill(e, killer, cause) {
     if (inStep) { if (!pendingEnd) pendingEnd = { pct, killer, cause }; }
     else endGame(pct, killer, cause);
   }
-  else e.respawnAt = simTime + rand(2, 4.5);
+  else e.respawnAt = diff.challenge ? 0 : simTime + rand(2, 4.5);     // challenges: pals do not come back
 }
 
 function loseHeart(e, killer, cause) {
@@ -1405,6 +1713,7 @@ function loseHeart(e, killer, cause) {
 function endGame(pct, killer, cause) {
   if (mode !== 'playing') return;
   accountPlay(false);
+  if (diff.challenge) { endChallenge(pct, killer, cause); return; }
   checkStars(true);                                // final achievements, including this very step's tags
   mode = 'over';
   pendingEnd = null;
@@ -1412,12 +1721,12 @@ function endGame(pct, killer, cause) {
   const win = cause === 'win';
   const who = killer ? killer.name : 'Someone';
   const causes = {
-    wall: 'You bumped the edge of the island.',
+    wall: diff.classic ? 'You bumped into the wall.' : 'You bumped the edge of the island.',
     self: 'You ran over your own trail.',
     trail: who + ' crossed your trail.',
     headon: 'You bumped into ' + who + '.',
     swallowed: who + ' took all your land.',
-    win: 'You own the whole island!'
+    win: diff.classic ? 'You own the whole board!' : 'You own the whole island!'
   };
   progress.rounds++;
   usage.rounds++;
@@ -1436,7 +1745,9 @@ function endGame(pct, killer, cause) {
   refreshCoins();
   $('ovCoinsText').textContent = '+' + earned + (earned === 1 ? ' coin' : ' coins');
   toggleClass($('ovCoins'), 'hidden', earned === 0);
-  $('ovTitle').textContent = win ? 'ISLAND CHAMPION!' : 'Oops!';
+  $('ovTitle').textContent = win ? (diff.classic ? 'BOARD CHAMPION!' : 'ISLAND CHAMPION!') : 'Oops!';
+  $('againBtn').textContent = diff.classic ? 'RETRY' : 'PLAY AGAIN';
+  $('menuBtn').textContent = 'Home';
   $('ovCause').textContent = causes[cause] || '';
   $('ovPct').textContent = pct.toFixed(2) + '%';
   $('ovKills').textContent = String(player.kills);
@@ -1520,8 +1831,7 @@ function nearestOwn(e) {
 }
 
 function dangerAt(e, x, y) {
-  const dx = x - CENTER, dy = y - CENTER, lim = ARENA_R - 40;
-  if (dx * dx + dy * dy > lim * lim) return true;
+  if (edgeDist(x, y) < 40) return true;
   // Easy: pals steer around the child's trail instead of wandering across it by accident
   if (diff.gentle && player && player.alive && e !== player && player.tx.length &&
       x > player.tminx - 30 && x < player.tmaxx + 30 && y > player.tminy - 30 && y < player.tmaxy + 30) {
@@ -1587,8 +1897,7 @@ function makePlan(e) {
     let score = Math.random() * 0.8 - Math.abs(angDiff(e.angle, a)) * 0.25;
     for (let j = 0; j < 3; j++) {
       const d = 120 + j * 130, x = e.x + c * d, y = e.y + s * d;
-      const dx = x - CENTER, dy = y - CENTER, lim = ARENA_R - 90;
-      if (dx * dx + dy * dy > lim * lim) { score -= 6 - j * 1.5; continue; }
+      if (edgeDist(x, y) < 90) { score -= 6 - j * 1.5; continue; }
       const o = owner[clamp((y / CELL) | 0, 0, N - 1) * N + clamp((x / CELL) | 0, 0, N - 1)];
       score += o === 0 ? 2 : o !== id ? 1.3 : 0.2;
     }
@@ -1605,9 +1914,9 @@ function makePlan(e) {
   let sign = Math.random() < 0.5 ? 1 : -1;
   // keep the far corner of the loop inside the arena
   const la = bestA + sign * Math.PI / 2;
-  const fx = e.x + Math.cos(bestA) * leg1 + Math.cos(la) * leg2 - CENTER;
-  const fy = e.y + Math.sin(bestA) * leg1 + Math.sin(la) * leg2 - CENTER;
-  if (fx * fx + fy * fy > (ARENA_R - 110) * (ARENA_R - 110)) sign = -sign;
+  const fx = e.x + Math.cos(bestA) * leg1 + Math.cos(la) * leg2;
+  const fy = e.y + Math.sin(bestA) * leg1 + Math.sin(la) * leg2;
+  if (edgeDist(fx, fy) < 110) sign = -sign;
   return { dir: bestA, leg1, leg2, sign };
 }
 
@@ -1703,18 +2012,67 @@ function steerPlayer(e, h) {
   }
 }
 
+/* ---- Classic movement: straight lines between tile centres, turns only at a centre ---- */
+function moveClassic(e, dist) {
+  const o = board.origin + TILE / 2;                    // tile centres are the junctions
+  for (let guard = 0; dist > 1e-9 && guard < 8; guard++) {
+    const [dx, dy] = DIRS[e.dir];
+    const along = dx ? e.x : e.y, sg = dx || dy;
+    // A head is only ever exactly on a centre right after that centre was handled, so "on a centre" means
+    // "go on to the next one". Moves that would stop a hair short of a centre land on it instead; otherwise
+    // floating-point dust could make a queued turn wait a whole tile.
+    const k = (along - o) / TILE, rk = Math.round(k);
+    const next = Math.abs(k - rk) < 1e-6 ? rk + sg : (sg > 0 ? Math.ceil(k) : Math.floor(k));
+    const jpos = o + next * TILE, toNext = Math.abs(jpos - along);
+    if (dist < toNext - 1e-6) { e.x += dx * dist; e.y += dy * dist; return; }
+    if (dx) e.x = jpos; else e.y = jpos;                // land exactly on the centre: no drift
+    dist -= toNext;
+    atJunction(e);
+  }
+}
+function atJunction(e) {
+  if (e.isPlayer) {
+    if (e.pend >= 0 && (e.pend & 1) !== (e.dir & 1)) e.dir = e.pend;   // only a quarter turn, never back
+    e.pend = -1;
+  } else e.dir = classicBotDir(e);
+  e.angle = DIR_ANGLE[e.dir];
+  if (e.tx.length) addTrailPoint(e, e.x, e.y);         // exact corners in the trail
+}
+// a pal picks the legal direction closest to what its usual thinking wants, preferring safe tiles
+function classicBotDir(e) {
+  const options = [e.dir, (e.dir + 1) % 4, (e.dir + 3) % 4];
+  options.sort((a, b) => Math.abs(angDiff(DIR_ANGLE[a], e.targetAngle)) - Math.abs(angDiff(DIR_ANGLE[b], e.targetAngle)));
+  for (const n of [2, 1]) for (const d of options) if (tilesSafe(e, d, n)) return d;
+  for (const d of options) if (inPlay(e.x + DIRS[d][0] * TILE, e.y + DIRS[d][1] * TILE)) return d;
+  return e.dir;
+}
+function tilesSafe(e, d, n) {
+  for (let k = 1; k <= n; k++) {
+    const x = e.x + DIRS[d][0] * TILE * k, y = e.y + DIRS[d][1] * TILE * k;
+    if (!inPlay(x, y) || dangerAt(e, x, y)) return false;
+  }
+  return true;
+}
+// the player's next quarter turn: the latest valid input wins; straight back is ignored
+function queueTurn(d) {
+  const p = player;
+  if (!p || !p.alive || !diff.classic || mode !== 'playing') return;
+  if ((d + 2) % 4 === p.dir) return;
+  p.pend = d;
+}
+
 // Easy mode: the island edge is bouncy for the player instead of a game-ender.
-function bounceOffWall(e, dx, dy) {
-  const d = Math.hypot(dx, dy) || 1;
-  const nx = dx / d, ny = dy / d;
-  const vx = Math.cos(e.angle), vy = Math.sin(e.angle);
+function bounceOffWall(e) {
+  const { nx, ny } = wallNormal(e.x, e.y);
+  const inA = e.angle, vx = Math.cos(inA), vy = Math.sin(inA);
   const dot = vx * nx + vy * ny;
-  e.angle = Math.atan2(vy - 2 * dot * ny, vx - 2 * dot * nx);
-  // nudge the bounce a little toward the island centre so a head-on hit never retraces the trail
-  const dev = angDiff(e.angle, Math.atan2(-ny, -nx));
-  e.angle += (Math.abs(dev) < 0.02 ? (Math.random() < 0.5 ? 1 : -1) : Math.sign(dev)) * 0.35;
-  const r = ARENA_R - HEAD_R - 2;
-  e.x = CENTER + nx * r; e.y = CENTER + ny * r;
+  let out = Math.atan2(vy - 2 * dot * ny, vx - 2 * dot * nx);          // a mirror bounce
+  // ...but never straight back along the trail just drawn: hits close to head-on would otherwise retrace it
+  // and cost a heart. Keep at least 0.5 rad (about 30 degrees) away from the way the player came in.
+  const back = inA + Math.PI, d = angDiff(back, out);
+  if (Math.abs(d) < 0.5) out = back + (Math.abs(d) < 0.02 ? (Math.random() < 0.5 ? 1 : -1) : Math.sign(d)) * 0.5;
+  e.angle = out;
+  clampToPlay(e);
   const cx = clamp((e.x / CELL) | 0, 0, N - 1), cy = clamp((e.y / CELL) | 0, 0, N - 1);
   e.inOwn = owner[cy * N + cx] === e.id;
   if (simTime - e.bumpAt > 0.6) {
@@ -1726,8 +2084,7 @@ function bounceOffWall(e, dx, dy) {
 
 function spawnPickup() {
   for (let t = 0; t < 20; t++) {
-    const a = Math.random() * TAU, r = Math.sqrt(Math.random()) * (ARENA_R - 160);
-    const x = CENTER + Math.cos(a) * r, y = CENTER + Math.sin(a) * r;
+    const { x, y } = randomPoint(Math.min(160, edgeSize() * 0.5));
     if (t < 12 && player && player.alive && Math.hypot(x - player.x, y - player.y) > 1100) continue;   // prefer nearby
     let ok = true;
     for (const o of entities) if (o.alive && Math.hypot(o.x - x, o.y - y) < 250) { ok = false; break; }
@@ -1758,7 +2115,7 @@ function updatePickups() {
     if (simTime - pu.born > PICKUP_LIFE) { pickups.splice(i, 1); continue; }
     if (Math.hypot(player.x - pu.x, player.y - pu.y) < PICKUP_R) { pickups.splice(i, 1); collectPickup(pu); }
   }
-  if (simTime >= nextPickupAt) {
+  if (diff.pickGap && simTime >= nextPickupAt) {
     if (pickups.length < PICKUP_MAX && spawnPickup()) nextPickupAt = simTime + rand(diff.pickGap[0], diff.pickGap[1]);
     else nextPickupAt = simTime + 1;                                       // full or no room: look again in a second
   }
@@ -1786,7 +2143,10 @@ function stepCore(h) {
       }
       continue;
     }
-    if (e.isPlayer) steerPlayer(e, h);
+    if (diff.classic) {
+      // Classic: pals still think as usual; the decision is applied at the next tile centre
+      if (!e.isPlayer && simTime >= e.ai.next) { think(e); e.ai.next = simTime + rand(0.06, 0.11); }
+    } else if (e.isPlayer) steerPlayer(e, h);
     else {
       if (simTime >= e.ai.next) { think(e); e.ai.next = simTime + rand(0.06, 0.11); }
       e.angle += clamp(angDiff(e.angle, e.targetAngle), -TURN_BOT * h, TURN_BOT * h);
@@ -1794,8 +2154,11 @@ function stepCore(h) {
     e.px = e.x; e.py = e.y;
     // Zoom speeds the player up; Freeze slows every pal down
     const sp = e.isPlayer ? (simTime < zoomUntil ? e.speed * 1.35 : e.speed) : (simTime < freezeUntil ? e.speed * 0.45 : e.speed);
-    e.x += Math.cos(e.angle) * sp * h;
-    e.y += Math.sin(e.angle) * sp * h;
+    if (diff.classic) moveClassic(e, sp * h);
+    else {
+      e.x += Math.cos(e.angle) * sp * h;
+      e.y += Math.sin(e.angle) * sp * h;
+    }
     const cx = clamp((e.x / CELL) | 0, 0, N - 1), cy = clamp((e.y / CELL) | 0, 0, N - 1);
     e.inOwn = owner[cy * N + cx] === e.id;
   }
@@ -1803,9 +2166,8 @@ function stepCore(h) {
   // arena boundary
   for (const e of entities) {
     if (!e.alive) continue;
-    const dx = e.x - CENTER, dy = e.y - CENTER;
-    if (dx * dx + dy * dy > WALL_R2) {
-      if (e.isPlayer && diff.bounce) bounceOffWall(e, dx, dy);
+    if (edgeDist(e.x, e.y) < HEAD_R - 2) {              // same line as the old WALL_R2 test on the island
+      if (e.isPlayer && diff.bounce) bounceOffWall(e);
       else doom(e, null, 'wall');
     }
   }
@@ -1859,7 +2221,9 @@ function stepCore(h) {
     missionEvent('play90', simTime - player.bornAt);
     updatePickups();
     checkStars(false);
-    if (counts[player.id] >= arenaCells * 0.999 && !pendingEnd) pendingEnd = { pct: p, killer: null, cause: 'win' };
+    if (diff.classic && !diff.challenge && p >= 25) unlockAvatar('dino');
+    if (diff.challenge && !pendingEnd && challengeMet(diff.challenge, p)) pendingEnd = { pct: p, killer: null, cause: 'goal' };
+    if (counts[player.id] >= (diff.classic ? arenaCells : arenaCells * 0.999) && !pendingEnd) pendingEnd = { pct: p, killer: null, cause: 'win' };
   }
 }
 
@@ -1940,6 +2304,19 @@ function drawCreature(c, x, y, r, type, color, angle, mood, noPointer, hat) {
     case 'chick':
       poly([-0.3, -0.92, -0.28, -1.32, -0.1, -1.0, 0, -1.42, 0.1, -1.0, 0.28, -1.32, 0.3, -0.92], color, true);
       break;
+    case 'owl':
+      poly([-0.85, -0.45, -0.7, -1.2, -0.3, -0.85], color, true);
+      poly([0.85, -0.45, 0.7, -1.2, 0.3, -0.85], color, true);
+      break;
+    case 'dino':
+      poly([-0.55, -0.8, -0.38, -1.3, -0.15, -0.95], '#06d6a0', true);
+      poly([-0.18, -0.96, 0, -1.45, 0.18, -0.96], '#06d6a0', true);
+      poly([0.15, -0.95, 0.38, -1.3, 0.55, -0.8], '#06d6a0', true);
+      break;
+    case 'unicorn':
+      disc(-0.72, -0.55, 0.22, '#ff70a6'); disc(-0.82, -0.2, 0.2, '#8338ec'); disc(-0.75, 0.15, 0.18, '#3a86ff');
+      poly([-0.16, -0.92, 0.16, -0.92, 0, -1.75], '#ffd23f', true);
+      break;
     case 'fox':
       poly([-0.9, -0.2, -0.68, -1.45, -0.05, -0.9], color, true);
       poly([0.9, -0.2, 0.68, -1.45, 0.05, -0.9], color, true);
@@ -1996,7 +2373,7 @@ function drawCreature(c, x, y, r, type, color, angle, mood, noPointer, hat) {
 
   // 4. mouth
   c.lineWidth = lw * 0.8;
-  if (type === 'chick') {
+  if (type === 'chick' || type === 'owl') {
     poly([-0.2, 0.22, 0.2, 0.22, 0, 0.55], '#ff9f1c', true);
   } else if (mood === 'wow') {
     c.beginPath(); c.arc(0, 0.5 * r, 0.14 * r, 0, TAU); c.fillStyle = INK; c.fill();
@@ -2049,15 +2426,13 @@ function render(now) {
   const vy0 = cam.y - vh / 2 / s, vy1 = cam.y + vh / 2 / s;
 
   // foam ring and sandy island floor
-  ctx.beginPath();
-  ctx.arc(CENTER, CENTER, ARENA_R + 12, 0, TAU);
+  boardPath(ctx, 12, 1);
   ctx.lineWidth = 26;
   ctx.globalAlpha = 0.35;
   ctx.strokeStyle = th.foam;
   ctx.stroke();
   ctx.globalAlpha = 1;
-  ctx.beginPath();
-  ctx.arc(CENTER, CENTER, ARENA_R, 0, TAU);
+  boardPath(ctx, 0, 1);
   ctx.fillStyle = th.floor;
   ctx.fill();
 
@@ -2065,35 +2440,42 @@ function render(now) {
   const sx0 = clamp(Math.floor(vx0 / CELL) - 1, 0, N), sx1 = clamp(Math.ceil(vx1 / CELL) + 1, 0, N);
   const sy0 = clamp(Math.floor(vy0 / CELL) - 1, 0, N), sy1 = clamp(Math.ceil(vy1 / CELL) + 1, 0, N);
   if (sx1 > sx0 && sy1 > sy0) {
-    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingEnabled = !board.tile;            // Classic tiles stay crisp
     ctx.globalAlpha = 0.92;
     ctx.drawImage(terr, sx0, sy0, sx1 - sx0, sy1 - sy0, sx0 * CELL, sy0 * CELL, (sx1 - sx0) * CELL, (sy1 - sy0) * CELL);
     ctx.globalAlpha = 1;
   }
 
-  // subtle grid, clipped to the arena by chord length
-  const GRID = 50, R2 = ARENA_R * ARENA_R;
+  // subtle grid, clipped to the board
+  const GRID = board.tile || 50, GO = board.tile ? board.origin : 0, E = edgeSize();   // Classic: lines on tile edges
+  ctx.save();
+  boardPath(ctx, 0, 1);
+  ctx.clip();
   ctx.beginPath();
-  for (let gx = Math.ceil(Math.max(vx0, CENTER - ARENA_R) / GRID) * GRID; gx <= Math.min(vx1, CENTER + ARENA_R); gx += GRID) {
-    const half = Math.sqrt(Math.max(0, R2 - (gx - CENTER) * (gx - CENTER)));
-    const a = Math.max(vy0, CENTER - half), b = Math.min(vy1, CENTER + half);
-    if (b > a) { ctx.moveTo(gx, a); ctx.lineTo(gx, b); }
+  for (let gx = GO + Math.ceil((Math.max(vx0, CENTER - E) - GO) / GRID) * GRID; gx <= Math.min(vx1, CENTER + E); gx += GRID) {
+    ctx.moveTo(gx, Math.max(vy0, CENTER - E)); ctx.lineTo(gx, Math.min(vy1, CENTER + E));
   }
-  for (let gy = Math.ceil(Math.max(vy0, CENTER - ARENA_R) / GRID) * GRID; gy <= Math.min(vy1, CENTER + ARENA_R); gy += GRID) {
-    const half = Math.sqrt(Math.max(0, R2 - (gy - CENTER) * (gy - CENTER)));
-    const a = Math.max(vx0, CENTER - half), b = Math.min(vx1, CENTER + half);
-    if (b > a) { ctx.moveTo(a, gy); ctx.lineTo(b, gy); }
+  for (let gy = GO + Math.ceil((Math.max(vy0, CENTER - E) - GO) / GRID) * GRID; gy <= Math.min(vy1, CENTER + E); gy += GRID) {
+    ctx.moveTo(Math.max(vx0, CENTER - E), gy); ctx.lineTo(Math.min(vx1, CENTER + E), gy);
   }
   ctx.lineWidth = 1 / s;
   ctx.strokeStyle = th.grid;
   ctx.stroke();
+  ctx.restore();
 
   // white foam edge of the island
-  ctx.beginPath();
-  ctx.arc(CENTER, CENTER, ARENA_R + 3, 0, TAU);
+  boardPath(ctx, 3, 1);
   ctx.lineWidth = 8;
   ctx.strokeStyle = th.foam;
   ctx.stroke();
+  if (diff.classic) {                                  // Classic walls are dangerous: make them look it
+    boardPath(ctx, 8, 1);
+    ctx.lineWidth = 10;
+    ctx.setLineDash([28, 22]);
+    ctx.strokeStyle = '#ef476f';
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 
   // trails
   ctx.lineCap = 'round';
@@ -2249,12 +2631,11 @@ function drawMinimap() {
   m.setTransform(1, 0, 0, 1, 0, 0);
   m.clearRect(0, 0, S, S);
   m.save();
-  m.beginPath();
-  m.arc(S / 2, S / 2, ARENA_R * k, 0, TAU);
+  boardPath(m, 0, k);
   m.fillStyle = (THEMES[settings.theme] || THEMES.sand).floor;
   m.fill();
   m.clip();
-  m.imageSmoothingEnabled = true;
+  m.imageSmoothingEnabled = !board.tile;
   m.globalAlpha = 0.95;
   m.drawImage(terr, 0, 0, N, N, 0, 0, S, S);
   m.globalAlpha = 1;
@@ -2275,8 +2656,7 @@ function drawMinimap() {
   m.lineWidth = Math.max(1, dpr);
   m.strokeRect((cam.x - vw / 2 / s) * k, (cam.y - vh / 2 / s) * k, vw / s * k, vh / s * k);
   m.restore();
-  m.beginPath();
-  m.arc(S / 2, S / 2, ARENA_R * k - 0.5 * dpr, 0, TAU);
+  boardPath(m, -0.5 * dpr / k, k);
   m.lineWidth = 2 * dpr;
   m.strokeStyle = INK;
   m.stroke();
@@ -2377,6 +2757,9 @@ function updateHud() {
     statKills.textContent = String(player.kills);
   }
   updatePower();
+  const ch = mode === 'playing' && diff.challenge;
+  toggleClass($('goalPill'), 'hidden', !ch);
+  if (ch) $('goalPill').textContent = challengeGoalText(ch);
 }
 
 // the pill under the counters shows whichever power-up has the most time left
@@ -2486,14 +2869,23 @@ function setAwake(on) {
   if (a && a.setKeepAwake) { try { a.setKeepAwake(!!on); } catch (err) { /* ignore */ } }
 }
 
-function refreshBest() { $('bestLabel').textContent = 'Best: ' + progress.best.toFixed(2) + '%'; }
+function refreshBest() {
+  $('bestLabel').textContent = selectedMode === 'classic'
+    ? 'Classic best: ' + progress.classicBest.toFixed(2) + '%'
+    : 'Best: ' + progress.best.toFixed(2) + '%';
+}
 const isTouchy = () => !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 function refreshSteer() {
   toggleClass($('steerFinger'), 'sel', settings.steer === 'finger');
   toggleClass($('steerStick'), 'sel', settings.steer === 'stick');
-  $('helpText').textContent = settings.steer === 'stick'
+  $('helpText').textContent = selectedMode === 'classic' ? 'Swipe or press arrows to turn at the squares!' : settings.steer === 'stick'
     ? 'Drag anywhere like a joystick!'
     : (isTouchy() ? 'Hold your finger where you want to go!' : 'Use the mouse or arrow keys. Leave your land, draw a loop, come back home!');
+  if (window.LoopfrontDesktop) $('helpText').textContent = selectedMode === 'classic'
+    ? 'Arrows or WASD turn at the squares. Esc pauses; F11 toggles fullscreen.'
+    : settings.steer === 'stick'
+    ? 'Drag to steer; arrows and WASD also work. Esc pauses; F11 toggles fullscreen.'
+    : 'Mouse, arrows or WASD to steer. Esc pauses; F11 toggles fullscreen.';
 }
 function setSteer(v) { settings.steer = v; input.stickDown = false; saveSettings(); refreshSteer(); }
 function refreshSound() { toggleClass($('soundBtn'), 'muted', !settings.sound); }
@@ -2507,7 +2899,7 @@ function startGame() {
   nickInput.blur();
   syncMissionDay();                                // today's mission, decided between rounds
   syncUsageDay();
-  startMatch(true);
+  startMatch(true, nextKind.mode, nextKind.id);
   paused = false;
   mode = 'playing';
   activeSince = performance.now();                 // a fresh stamp: menus and results never count
@@ -2519,6 +2911,7 @@ function startGame() {
   setAwake(true);
   wake();
   startLoop();
+  if (diff.classic) addFeed('Swipe or use arrows to turn', false);
 }
 
 // Called by Play / Play again: handles the break reminder and the first-time tutorial.
@@ -2534,12 +2927,16 @@ function grantMore() {
   usage.extraSec = over + 900;
   flushUsage();
   hide(doneScreen);
-  requestStart();
+  requestStart(true);
 }
-function requestStart() {
+function requestStart(keepKind) {
+  // from the start screen PLAY means the chosen mode; Retry and challenge buttons keep what they set
+  if (keepKind !== true && mode === 'menu') nextKind = { mode: selectedMode, id: null };
   if (limitReached()) { showDone(); return; }       // between rounds only, and before the break reminder
   if (parentCfg.breakMin > 0 && playedSec >= parentCfg.breakMin * 60) { showBreak(); return; }
-  if (!settings.seenHowTo) { openHow(true); return; }
+  if (nextKind.mode !== 'island') {
+    if (!settings.seenClassic) { show(classicHowScreen); return; }
+  } else if (!settings.seenHowTo) { openHow(true); return; }
   startGame();
 }
 
@@ -2560,6 +2957,7 @@ function showMenu() {
 }
 
 function pauseRound() {
+  if (player) player.pend = -1;                     // a turn queued before pausing is forgotten
   if (mode !== 'playing' || paused) return;
   accountPlay(false);
   flushMission();
@@ -2793,6 +3191,10 @@ function refreshParent() {
   $('updateStatus').textContent = '';
   $('updateNotes').textContent = '';
   let ver = 'Web version';
+  if (window.LoopfrontDesktop) {
+    hide($('updateBtn').closest('.setrow'));
+    ver = 'Windows preview v' + window.LoopfrontDesktop.version + ' · Download a new ZIP to update.';
+  }
   if (a && a.getVersion) { try { ver = 'Version v' + a.getVersion(); } catch (err) { ver = 'App version unknown'; } }
   $('verLabel').textContent = ver;
   $('resetBtn').textContent = 'Reset all progress';
@@ -2845,8 +3247,10 @@ function resetProgress() {
     return;
   }
   resetArmedAt = 0;
-  progress.best = 0; progress.rounds = 0; progress.stars = {};
+  progress.best = 0; progress.classicBest = 0; progress.rounds = 0; progress.stars = {};
   progress.coins = 0; progress.owned = {}; progress.coinsEarned = 0; progress.bought = 0;
+  progress.challenges = {}; progress.avatars = {};
+  if (AVATAR_IDS.indexOf(settings.character) >= 0) settings.character = 'cat';
   progress.mission = { day: -1, done: false, count: 0 }; progress.streak = 0; progress.missionsDone = 0; progress.lastDoneDay = 0;
   missionDirty = false;
   settings.hat = 'none'; settings.trail = 'plain'; settings.theme = 'sand';
@@ -2877,24 +3281,39 @@ function refreshSwatches() {
 
 const charButtons = [];
 function buildCharacters() {
-  for (const type of CHARACTERS) {
+  for (const type of CHARACTERS.concat(AVATAR_IDS)) {
     const b = document.createElement('button');
     b.type = 'button';
     b.setAttribute('aria-label', type);
     const cv = document.createElement('canvas');
     cv.width = 96; cv.height = 96;
     b.appendChild(cv);
-    b.addEventListener('click', () => { settings.character = type; saveSettings(); refreshChars(); });
+    b.addEventListener('click', () => pickCharacter(type));
     charBox.appendChild(b);
     charButtons.push({ b, cv, type });
   }
 }
+function pickCharacter(type) {
+  const av = AVATARS.find(a => a.id === type);
+  if (av && !progress.avatars[type]) {             // locked: say how to earn it
+    $('avatarMsg').textContent = 'Unlock: ' + av.feat + avatarProgress(type);
+    return;
+  }
+  $('avatarMsg').textContent = '';
+  settings.character = type; saveSettings(); refreshChars();
+}
 function refreshChars() {
   for (const c of charButtons) {
-    c.b.className = c.type === settings.character ? 'sel' : '';
+    const locked = AVATAR_IDS.indexOf(c.type) >= 0 && !progress.avatars[c.type];
+    c.b.className = (c.type === settings.character ? 'sel' : '') + (locked ? ' locked' : '');
     const g = c.cv.getContext('2d');
     g.clearRect(0, 0, 96, 96);
-    drawCreature(g, 48, 62, 26, c.type, settings.color, 0.5, 'happy', true, settings.hat);
+    drawCreature(g, 48, 62, 26, c.type, locked ? '#c7ccd6' : settings.color, 0.5, 'happy', true, locked ? 'none' : settings.hat);
+    if (locked) {                                   // a little padlock
+      g.lineWidth = 4; g.strokeStyle = INK; g.fillStyle = '#ffd23f';
+      g.beginPath(); g.arc(72, 70, 9, Math.PI, TAU); g.stroke();
+      g.beginPath(); g.rect(60, 70, 24, 18); g.fill(); g.stroke();
+    }
   }
 }
 
@@ -2903,7 +3322,29 @@ function refreshChars() {
    ===================================================================== */
 $('playBtn').addEventListener('click', requestStart);
 $('againBtn').addEventListener('click', requestStart);
-$('menuBtn').addEventListener('click', showMenu);
+function setMode(m) {
+  selectedMode = m;
+  toggleClass($('modeIsland'), 'sel', m === 'island');
+  toggleClass($('modeClassic'), 'sel', m === 'classic');
+  $('modeIsland').setAttribute('aria-pressed', String(m === 'island'));
+  $('modeClassic').setAttribute('aria-pressed', String(m === 'classic'));
+  refreshBest();
+  refreshSteer();
+}
+$('modeIsland').addEventListener('click', () => setMode('island'));
+$('modeClassic').addEventListener('click', () => setMode('classic'));
+$('classicOkBtn').addEventListener('click', () => {
+  settings.seenClassic = true; saveSettings();
+  hide(classicHowScreen);
+  requestStart(true);
+});
+$('menuBtn').addEventListener('click', () => {
+  const toList = nextKind.mode === 'challenge';
+  showMenu();
+  if (toList) openChallenges();
+});
+$('challengesBtn').addEventListener('click', openChallenges);
+$('challengeCloseBtn').addEventListener('click', () => hide(challengeScreen));
 $('diceBtn').addEventListener('click', () => { nickInput.value = pick(FUN_NAMES); });
 $('howBtn').addEventListener('click', () => openHow(false));
 $('howOkBtn').addEventListener('click', () => {
@@ -2956,7 +3397,7 @@ $('updateGetBtn').addEventListener('click', () => {
 $('resetBtn').addEventListener('click', resetProgress);
 $('parentCloseBtn').addEventListener('click', closeParent);
 
-const noOverlayOpen = () => ![howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, doneScreen, gateScreen, parentScreen].some(isOpen);
+const noOverlayOpen = () => ![challengeScreen, classicHowScreen, howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, doneScreen, gateScreen, parentScreen].some(isOpen);
 
 const isEditable = t => !!t && (t.isContentEditable === true || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''));
 const isInteractive = t => isEditable(t) || (!!t && !!t.closest && !!t.closest('button, a[href], [role="button"]'));
@@ -2966,6 +3407,9 @@ window.addEventListener('keydown', ev => {
   ensureAudio();
   if (wantLoop()) startLoop();
   const key = (ev.key || '').toLowerCase();
+  if (window.LoopfrontDesktop && key === 'escape' && !ev.repeat && mode === 'playing') {
+    ev.preventDefault(); releaseKeys(); input.stickDown = false; pauseRound(); return;
+  }
   if (ev.target === nickInput) {
     // the name field keeps Enter-to-play, but only while the start screen is unobstructed
     if (key === 'enter' && !ev.repeat && isOpen(startScreen) && noOverlayOpen()) { ev.preventDefault(); requestStart(); }
@@ -2973,6 +3417,7 @@ window.addEventListener('keydown', ev => {
   }
   if (isEditable(ev.target)) return;
   const dir = KEYMAP[key];
+  if (dir && diff.classic && mode === 'playing') { if (!ev.repeat) queueTurn(KEY_DIR[dir]); ev.preventDefault(); return; }
   if (dir) { input[dir] = true; input.mode = 'keys'; input.ax = input.mx; input.ay = input.my; ev.preventDefault(); return; }
   // Enter / Space start a game only from a non-interactive target; on a focused button they keep their
   // native meaning (activate that button) and must not also start a round.
@@ -2985,7 +3430,15 @@ window.addEventListener('keyup', ev => {
   const dir = KEYMAP[(ev.key || '').toLowerCase()];
   if (dir) input[dir] = false;
 });
-window.addEventListener('blur', releaseKeys);
+window.addEventListener('blur', () => {
+  releaseKeys();
+  swipe.on = false;
+  if (player) player.pend = -1;                     // a Classic turn queued before losing focus is forgotten
+  if (window.LoopfrontDesktop) { input.stickDown = false; window.onLoopfrontPause(); }
+});
+window.addEventListener('focus', () => {
+  if (window.LoopfrontDesktop) window.onLoopfrontResume();
+});
 
 const onControl = ev => !!(ev.target && ev.target.closest && ev.target.closest('button, .overlay'));   // taps on buttons do not steer
 
@@ -3014,10 +3467,24 @@ function pointer(ev) {
   }
   input.mode = 'mouse';
 }
-window.addEventListener('pointermove', ev => { lastInputAt = performance.now(); if (wantLoop()) startLoop(); if (settings.steer === 'stick') stickMove(ev); else pointer(ev); });
-window.addEventListener('pointerdown', ev => { ensureAudio(); lastInputAt = performance.now(); if (wantLoop()) startLoop(); if (settings.steer === 'stick') stickDown(ev); else pointer(ev); });
-window.addEventListener('pointerup', stickUp);
-window.addEventListener('pointercancel', stickUp);
+// Classic: a swipe (or a mouse drag) turns once per gesture, along its stronger direction
+const swipe = { on: false, done: false, x: 0, y: 0 };
+const classicInput = () => diff.classic && mode === 'playing';
+function swipeDown(ev) {
+  if (onControl(ev)) return;
+  swipe.on = true; swipe.done = false; swipe.x = ev.clientX; swipe.y = ev.clientY;
+}
+function swipeMove(ev) {
+  if (!swipe.on || swipe.done) return;
+  const dx = ev.clientX - swipe.x, dy = ev.clientY - swipe.y;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;            // dead zone against wobbles
+  queueTurn(Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 0 : 2) : (dy > 0 ? 1 : 3));
+  swipe.done = true;
+}
+window.addEventListener('pointermove', ev => { lastInputAt = performance.now(); if (wantLoop()) startLoop(); if (classicInput()) swipeMove(ev); else if (settings.steer === 'stick') stickMove(ev); else pointer(ev); });
+window.addEventListener('pointerdown', ev => { ensureAudio(); lastInputAt = performance.now(); if (wantLoop()) startLoop(); if (classicInput()) swipeDown(ev); else if (settings.steer === 'stick') stickDown(ev); else pointer(ev); });
+window.addEventListener('pointerup', () => { stickUp(); swipe.on = false; });
+window.addEventListener('pointercancel', () => { stickUp(); swipe.on = false; });
 window.addEventListener('click', ev => {
   if (ev.target && ev.target.closest && ev.target.closest('button')) sfx('tap');
 });
@@ -3039,6 +3506,8 @@ window.onLoopfrontBack = () => {
   if (isOpen(parentScreen)) { closeParent(); return true; }
   if (isOpen(howScreen)) { closeHow(); return true; }
   if (isOpen(starsScreen)) { hide(starsScreen); return true; }
+  if (isOpen(classicHowScreen)) { hide(classicHowScreen); return true; }
+  if (isOpen(challengeScreen)) { hide(challengeScreen); return true; }
   if (isOpen(shopScreen)) { hide(shopScreen); return true; }
   if (isOpen(doneScreen)) { hide(doneScreen); return true; }
   if (breakOpen()) return true;

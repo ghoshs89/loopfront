@@ -5,10 +5,13 @@ const HARD = JSON.stringify({ difficulty: 'hard', breakMin: 0, saver: false });
 // Start with the tutorial already seen (optionally on hard rules, where the island edge ends a round).
 async function seen(page, opts) {
   const parent = opts && opts.hard ? HARD : null;
+  // merges into what is already saved, so a page reload keeps whatever the test changed (init scripts run on every load)
   await page.addInitScript(([s, p]) => {
     try {
-      localStorage.setItem('loopfront.settings', s);
-      if (p) localStorage.setItem('loopfront.parent', p);
+      const cur = JSON.parse(localStorage.getItem('loopfront.settings') || 'null') || JSON.parse(s);
+      cur.seenHowTo = true;
+      localStorage.setItem('loopfront.settings', JSON.stringify(cur));
+      if (p && !localStorage.getItem('loopfront.parent')) localStorage.setItem('loopfront.parent', p);
     } catch (e) { /* ignore */ }
   }, [SEEN, parent]);
 }

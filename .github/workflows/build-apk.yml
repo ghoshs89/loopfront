@@ -1,27 +1,39 @@
 name: Build APK
 
+# One workflow validates and releases both platforms from the same commit:
+#   pull requests: web checks, Android lint + validation APK, Windows package + tests (no credentials)
+#   main (push or manual): the same, then one release vN with the signed APK and the Windows ZIP.
 on:
   push:
     branches: [main]
     paths:
       - 'web/**'
       - 'android/**'
+      - 'desktop/**'
       - 'tests/**'
       - 'package.json'
       - 'package-lock.json'
       - 'playwright.config.js'
       - '.github/workflows/build-apk.yml'
+      - '.github/workflows/windows-package.yml'
   pull_request:
     branches: [main]
     paths:
       - 'web/**'
       - 'android/**'
+      - 'desktop/**'
       - 'tests/**'
       - 'package.json'
       - 'package-lock.json'
       - 'playwright.config.js'
       - '.github/workflows/build-apk.yml'
+      - '.github/workflows/windows-package.yml'
   workflow_dispatch:
+    inputs:
+      android_only:
+        description: 'Emergency only: release the Android APK even if the Windows build is skipped'
+        type: boolean
+        default: false
 
 # Read-only by default. Only the release job below is granted write access.
 permissions:
@@ -32,6 +44,10 @@ permissions:
 concurrency:
   group: build-apk-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # SHA-256 of the Loopfront release signing certificate (public). A different signer blocks the release.
+  EXPECTED_CERT_SHA256: '0a7e97cdec4536a30e5385ddfb13585fbfc58b64b98b567219d775678789b1a8'
 
 jobs:
   web:
@@ -103,24 +119,41 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  windows:
+    name: Windows
+    needs: web
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.android_only) }}
+    uses: ./.github/workflows/windows-package.yml
+    with:
+      build_number: ${{ github.run_number }}
+
   release:
     name: Signed release
-    needs: [web, android]
+    needs: [web, android, windows]
     # Only a successful run on main (push or manual) may publish; pull requests never get here.
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    # Windows must have passed too, unless a grown-up started an Android-only emergency release by hand.
+    if: >-
+      always() && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      needs.web.result == 'success' && needs.android.result == 'success' &&
+      (needs.windows.result == 'success' ||
+       (github.event_name == 'workflow_dispatch' && inputs.android_only && needs.windows.result == 'skipped'))
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      RUN_NUMBER: ${{ github.run_number }}
+      WITH_WINDOWS: ${{ needs.windows.result == 'success' }}
     steps:
       - uses: actions/checkout@v5
 
       - name: Is there anything new to release?
         id: gate
         env:
-          GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
-          REPO: ${{ github.repository }}
         run: |
           skip=false
           if [ "$EVENT" = "workflow_dispatch" ]; then
@@ -169,31 +202,89 @@ jobs:
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: gradle --no-daemon assembleRelease
 
-      - name: Verify the signed APK before publishing
+      - name: Verify the signed APK
         if: steps.gate.outputs.skip != 'true'
-        env:
-          RUN_NUMBER: ${{ github.run_number }}
         run: |
           APK=android/app/build/outputs/apk/release/app-release.apk
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$BT/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apksigner.txt"
-          grep -q "CN=Loopfront" "$RUNNER_TEMP/apksigner.txt" || { echo "::error::APK is not signed with the Loopfront release key"; exit 1; }
+          grep -qi "certificate SHA-256 digest: $EXPECTED_CERT_SHA256" "$RUNNER_TEMP/apksigner.txt" || { echo "::error::APK is not signed with the Loopfront release certificate"; exit 1; }
           "$BT/aapt" dump badging "$APK" | head -1 | tee "$RUNNER_TEMP/badging.txt"
           grep -q "package: name='com.loopfront.game'" "$RUNNER_TEMP/badging.txt" || { echo "::error::Unexpected application id"; exit 1; }
           grep -q "versionCode='$RUN_NUMBER'" "$RUNNER_TEMP/badging.txt" || { echo "::error::Version code is not $RUN_NUMBER"; exit 1; }
+          prev=$(gh api "repos/$REPO/releases/latest" --jq .tag_name 2>/dev/null | tr -dc '0-9' || true)
+          if [ -n "$prev" ] && [ "$RUN_NUMBER" -le "$prev" ]; then echo "::error::Version $RUN_NUMBER is not newer than v$prev"; exit 1; fi
           unzip -p "$APK" assets/index.html | cmp - web/index.html || { echo "::error::Bundled page differs from web/index.html"; exit 1; }
-          echo "Signed APK verified: certificate, id, version $RUN_NUMBER, bundled page identical."
+          mkdir -p "$RUNNER_TEMP/assets"
+          cp "$APK" "$RUNNER_TEMP/assets/loopfront.apk"
+          echo "Signed APK verified: certificate, id, version $RUN_NUMBER (previous v${prev:-none}), bundled page identical."
 
-      - name: Publish release
-        if: steps.gate.outputs.skip != 'true'
+      - name: Fetch the Windows ZIP tested in this exact run
+        if: steps.gate.outputs.skip != 'true' && env.WITH_WINDOWS == 'true'
+        uses: actions/download-artifact@v5
+        with:
+          name: loopfront-windows-x64-${{ github.run_number }}
+          path: ${{ runner.temp }}/windows
+
+      - name: Check the Windows ZIP after transfer
+        if: steps.gate.outputs.skip != 'true' && env.WITH_WINDOWS == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_NUMBER: ${{ github.run_number }}
+          WANT_NAME: ${{ needs.windows.outputs.zip_name }}
+          WANT_SHA: ${{ needs.windows.outputs.zip_sha256 }}
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk loopfront.apk
-          SUBJECT=$(git log -1 --pretty=%s)
-          gh release create "v$RUN_NUMBER" loopfront.apk \
-            --target "$GITHUB_SHA" \
-            --title "Loopfront v$RUN_NUMBER" \
-            --notes "$SUBJECT" \
-            --latest
+          ZIP="$RUNNER_TEMP/windows/$WANT_NAME"
+          [ "$WANT_NAME" = "loopfront-windows-x64-v0.1.$RUN_NUMBER.zip" ] || { echo "::error::Unexpected Windows ZIP name $WANT_NAME"; exit 1; }
+          got=$(sha256sum "$ZIP" | cut -d' ' -f1)
+          [ "$got" = "$WANT_SHA" ] || { echo "::error::Windows ZIP changed in transfer"; exit 1; }
+          unzip -p "$ZIP" resources/app.asar > /dev/null || { echo "::error::Windows ZIP is not readable"; exit 1; }
+          cp "$ZIP" "$RUNNER_TEMP/assets/"
+          echo "Windows ZIP $WANT_NAME verified after transfer: $got"
+
+      - name: Stage, verify and publish release v${{ github.run_number }}
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -eu
+          TAG="v$RUN_NUMBER"
+          cd "$RUNNER_TEMP/assets"
+          sha256sum loopfront.apk loopfront-windows-x64-v*.zip 2>/dev/null > SHA256SUMS.txt || sha256sum loopfront.apk > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          SUBJECT=$(git -C "$GITHUB_WORKSPACE" log -1 --pretty=%s)
+          {
+            echo "$SUBJECT"
+            echo
+            echo "Android (Fire tablet): download loopfront.apk and install it over the existing app."
+            if [ "$WITH_WINDOWS" = "true" ]; then
+              echo "Windows 10/11 (x64): download loopfront-windows-x64-v0.1.$RUN_NUMBER.zip, extract the whole ZIP, run Loopfront.exe. It is not code-signed, so Windows may ask before the first start. Saved progress is kept when you extract a newer version into a new folder."
+            else
+              echo "This is an Android-only release; the Windows ZIP from the previous release still works."
+            fi
+            echo
+            echo "SHA-256 checksums are in SHA256SUMS.txt."
+          } > "$RUNNER_TEMP/notes.md"
+
+          # Safe to retry: an existing release with this tag must match exactly, or we stop.
+          if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; checking it matches this build."
+            mkdir -p "$RUNNER_TEMP/existing"
+            gh release download "$TAG" -R "$REPO" -D "$RUNNER_TEMP/existing" --clobber
+            for f in *; do cmp "$f" "$RUNNER_TEMP/existing/$f" || { echo "::error::Existing $TAG differs from this build ($f); not touching it"; exit 1; }; done
+          else
+            gh release create "$TAG" -R "$REPO" * --draft --target "$GITHUB_SHA" --title "Loopfront $TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
+          # Verify the staged draft: every asset present with the right size and bytes.
+          mkdir -p "$RUNNER_TEMP/check"
+          gh release download "$TAG" -R "$REPO" -D "$RUNNER_TEMP/check" --clobber
+          for f in *; do cmp "$f" "$RUNNER_TEMP/check/$f" || { echo "::error::Staged asset $f differs"; exit 1; }; done
+          [ "$(ls "$RUNNER_TEMP/check" | wc -l)" = "$(ls | wc -l)" ] || { echo "::error::Staged release has unexpected assets"; exit 1; }
+
+          if [ "$(gh release view "$TAG" -R "$REPO" --json isDraft --jq .isDraft)" = "true" ]; then
+            gh release edit "$TAG" -R "$REPO" --draft=false --latest
+          fi
+
+          # After publishing: the tag points at this commit and the stable APK link serves these exact bytes.
+          tagsha=$(git -C "$GITHUB_WORKSPACE" ls-remote origin "refs/tags/$TAG" | cut -f1)
+          [ "$tagsha" = "$GITHUB_SHA" ] || { echo "::error::Tag $TAG points at $tagsha, not $GITHUB_SHA"; exit 1; }
+          curl -fsSL "https://github.com/$REPO/releases/latest/download/loopfront.apk" -o "$RUNNER_TEMP/latest.apk"
+          cmp loopfront.apk "$RUNNER_TEMP/latest.apk" || { echo "::error::The stable APK link does not serve this release"; exit 1; }
+          echo "Published $TAG at $GITHUB_SHA and verified the public APK link."

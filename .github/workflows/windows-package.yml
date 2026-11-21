@@ -1,0 +1,93 @@
+name: Windows package (reusable)
+
+# Builds, verifies and tests the portable Windows ZIP for one exact commit. Read-only; no release
+# credentials. Called by "Build APK" (pull requests and releases) and by the manual "Windows preview".
+on:
+  workflow_call:
+    inputs:
+      build_number:
+        description: 'Build number N: the game ZIP is versioned 0.1.N'
+        required: true
+        type: string
+      retention_days:
+        required: false
+        type: number
+        default: 7
+    outputs:
+      zip_name:
+        description: 'File name of the verified game ZIP'
+        value: ${{ jobs.windows.outputs.zip_name }}
+      zip_sha256:
+        description: 'SHA-256 of the verified game ZIP'
+        value: ${{ jobs.windows.outputs.zip_sha256 }}
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows package and smoke tests
+    runs-on: windows-latest
+    timeout-minutes: 25
+    outputs:
+      zip_name: ${{ steps.verify.outputs.zip_name }}
+      zip_sha256: ${{ steps.verify.outputs.zip_sha256 }}
+    env:
+      LOOPFRONT_BUILD_NUMBER: ${{ inputs.build_number }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - name: Check the version number fits Windows (each part must be below 65535)
+        shell: pwsh
+        run: |
+          $n = [int]$env:LOOPFRONT_BUILD_NUMBER
+          if ($n -lt 1 -or $n -ge 65535) { throw "Build number $n does not fit a Windows version" }
+      - run: npm ci
+      - run: npm ci --prefix desktop
+      - run: npm run pack:windows --prefix desktop
+      - name: Extract and verify the actual downloadable ZIP
+        id: verify
+        shell: pwsh
+        run: |
+          $zip = @(Get-ChildItem desktop/dist/loopfront-windows-x64-v*.zip)
+          if ($zip.Count -ne 1) { throw 'Expected exactly one Windows ZIP' }
+          $expected = "loopfront-windows-x64-v0.1.$env:LOOPFRONT_BUILD_NUMBER.zip"
+          if ($zip[0].Name -ne $expected) { throw "Unexpected ZIP name $($zip[0].Name), wanted $expected" }
+          Expand-Archive $zip[0].FullName desktop/dist/verified
+          node desktop/verify-package.cjs desktop/dist/verified
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $info = (Get-Item desktop/dist/verified/Loopfront.exe).VersionInfo
+          if ($info.ProductName -ne 'Loopfront' -or $info.FileDescription -ne 'Loopfront') { throw 'Missing Loopfront executable branding' }
+          if ($info.ProductVersion -notlike "0.1.$env:LOOPFRONT_BUILD_NUMBER*") { throw 'Incorrect executable version' }
+          $hash = (Get-FileHash $zip[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($zip[0].Name)" | Set-Content -NoNewline desktop/dist/SHA256SUMS-windows.txt
+          "zip_name=$($zip[0].Name)" >> $env:GITHUB_OUTPUT
+          "zip_sha256=$hash" >> $env:GITHUB_OUTPUT
+          "LOOPFRONT_TEST_EXE=$((Resolve-Path desktop/dist/verified/Loopfront.exe).Path)" >> $env:GITHUB_ENV
+      - name: Test the packaged application on Windows
+        run: npm test --prefix desktop
+      - name: Upload the verified game ZIP for this exact run
+        uses: actions/upload-artifact@v5
+        with:
+          name: loopfront-windows-x64-${{ inputs.build_number }}
+          path: |
+            desktop/dist/loopfront-windows-x64-v*.zip
+            desktop/dist/SHA256SUMS-windows.txt
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: windows-desktop-test-report-${{ inputs.build_number }}
+          path: |
+            desktop/playwright-report
+            desktop/test-results
+          if-no-files-found: ignore
+          retention-days: 7
