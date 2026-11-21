@@ -1,31 +1,16 @@
 name: Windows preview
 
+# Manual preview build of the portable Windows ZIP (kept for 30 days as an Actions artifact, never
+# published). Pull requests and releases build Windows through "Build APK", so this no longer runs on
+# its own for pull requests and pushes.
 on:
-  push:
-    branches: [windows-desktop]
-    paths:
-      - 'desktop/**'
-      - 'web/**'
-      - 'tests/**'
-      - 'package*.json'
-      - 'playwright.config.js'
-      - '.github/workflows/windows-preview.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'desktop/**'
-      - 'web/**'
-      - 'tests/**'
-      - 'package*.json'
-      - 'playwright.config.js'
-      - '.github/workflows/windows-preview.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: windows-preview-${{ github.event.pull_request.number || github.ref }}
+  group: windows-preview-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -43,67 +28,10 @@ jobs:
       - run: npm run test:harness
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
-      - uses: actions/upload-artifact@v5
-        if: always()
-        with:
-          name: windows-preview-browser-report
-          path: |
-            playwright-report
-            test-results
-          retention-days: 7
-          if-no-files-found: ignore
 
   windows:
-    name: Windows package and smoke tests
     needs: web
-    runs-on: windows-latest
-    timeout-minutes: 25
-    env:
-      LOOPFRONT_BUILD_NUMBER: ${{ github.run_number }}
-      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            desktop/package-lock.json
-      - run: npm ci
-      - run: npm ci --prefix desktop
-      - run: npm run pack:windows --prefix desktop
-      - name: Extract and verify the actual downloadable ZIP
-        shell: pwsh
-        run: |
-          $zip = Get-ChildItem desktop/dist/loopfront-windows-x64-v*.zip
-          if (@($zip).Count -ne 1) { throw 'Expected exactly one Windows ZIP' }
-          Expand-Archive $zip.FullName desktop/dist/verified
-          node desktop/verify-package.cjs desktop/dist/verified
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $info = (Get-Item desktop/dist/verified/Loopfront.exe).VersionInfo
-          if ($info.ProductName -ne 'Loopfront' -or $info.FileDescription -ne 'Loopfront') { throw 'Missing Loopfront executable branding' }
-          if ($info.ProductVersion -notlike "0.1.$env:LOOPFRONT_BUILD_NUMBER*") { throw 'Incorrect executable version' }
-          $hash = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $($zip.Name)" | Set-Content desktop/dist/SHA256SUMS.txt
-          "LOOPFRONT_TEST_EXE=$((Resolve-Path desktop/dist/verified/Loopfront.exe).Path)" >> $env:GITHUB_ENV
-      - name: Test the packaged application on Windows
-        run: npm test --prefix desktop
-      - name: Upload verified portable preview (no GitHub Release)
-        uses: actions/upload-artifact@v5
-        with:
-          name: loopfront-windows-x64-preview-${{ github.run_number }}
-          path: |
-            desktop/dist/loopfront-windows-x64-v*.zip
-            desktop/dist/SHA256SUMS.txt
-          if-no-files-found: error
-          retention-days: 30
-      - uses: actions/upload-artifact@v5
-        if: always()
-        with:
-          name: windows-desktop-test-report
-          path: |
-            desktop/playwright-report
-            desktop/test-results
-          if-no-files-found: ignore
-          retention-days: 7
+    uses: ./.github/workflows/windows-package.yml
+    with:
+      build_number: ${{ github.run_number }}
+      retention_days: 30

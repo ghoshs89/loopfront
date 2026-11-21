@@ -1,24 +1,21 @@
 # Loopfront
 
-A bright, kid-friendly territory game for Fire tablets, browsers, and a **Windows desktop preview**. Leave your land, draw a
+A bright, kid-friendly territory game for Fire tablets, Windows PCs and browsers. Leave your land, draw a
 loop, come back home and the whole loop becomes yours. Cross someone's trail and they are out; cross your
 own and you are out. Pick a buddy, a colour and a name, then play against computer-controlled pals.
 
 The game is a single offline web page (`web/index.html`). `android/` wraps it in a tiny Android app, and a
 GitHub Actions workflow builds the APK for you. `desktop/` wraps that same page in Electron for Windows.
 
-> **Windows preview:** available on the [`windows-desktop` branch](https://github.com/ghoshs89/loopfront/tree/windows-desktop),
-> proposed in [draft PR #7](https://github.com/ghoshs89/loopfront/pull/7). Downloads are uploaded only after all preview checks pass.
-> It is proposed for review, not a Windows release on `main`. This branch leaves the Android files,
-> Android workflow, current APK releases, and download links unchanged. Shared-page desktop hooks
-> would become part of Android's bundled page only after a future merge.
+> Every release `vN` contains the signed Android APK and the Windows ZIP built and tested from the same
+> commit, plus `SHA256SUMS.txt` with the checksum of each download.
 
 ## Choose how to play
 
 | Platform | Get the game | Status |
 |---|---|---|
-| Android / Fire tablet | [Latest APK](https://github.com/ghoshs89/loopfront/releases/latest/download/loopfront.apk) | Existing Android release |
-| Windows 10/11 x64 | [Windows preview workflow runs](https://github.com/ghoshs89/loopfront/actions/workflows/windows-preview.yml?query=branch%3Awindows-desktop) | Portable ZIP from a successful run; GitHub sign-in required |
+| Android / Fire tablet | [Latest APK](https://github.com/ghoshs89/loopfront/releases/latest/download/loopfront.apk) | Signed; installs over the existing app |
+| Windows 10/11 x64 | [Latest release page](https://github.com/ghoshs89/loopfront/releases/latest): `loopfront-windows-x64-v0.1.N.zip` | Portable ZIP, not code-signed; no GitHub sign-in needed |
 | Edge / Chrome browser | Open `web/index.html` from a downloaded or cloned checkout | Offline page; no installer or server required |
 
 ## How to play
@@ -80,14 +77,16 @@ Tapping a locked buddy shows how to earn it (with your progress where it applies
 Updates: open **Grown-ups** on the start screen, answer the maths question, and tap **Check for updates**.
 If a newer version exists, **Download update** opens the new APK; tap it to install over the old one.
 
-## Windows desktop preview
+## Windows
 
-Use a successful workflow run; failed runs contain test reports but no playable download.
+1. Open the [latest release](https://github.com/ghoshs89/loopfront/releases/latest) and download
+   `loopfront-windows-x64-v0.1.N.zip` (N matches the release `vN`). Optionally compare its SHA-256 with
+   `SHA256SUMS.txt` on the same page.
+2. Extract the **entire ZIP** to a normal folder (one extraction is all that is needed), then run
+   **Loopfront.exe**. Keep the supporting files and `resources` folder alongside the executable.
 
-1. Sign in to GitHub and open the [Windows preview workflow](https://github.com/ghoshs89/loopfront/actions/workflows/windows-preview.yml?query=branch%3Awindows-desktop).
-2. Choose a successful run for `windows-desktop`, then download its **loopfront-windows-x64-preview-N** artifact.
-3. Extract the downloaded artifact archive. Inside is `loopfront-windows-x64-v0.1.N.zip` and `SHA256SUMS.txt`.
-4. Extract the **entire inner ZIP** to a normal folder, then run **Loopfront.exe**. Keep the supporting files and `resources` folder alongside the executable.
+(The manual [Windows preview workflow](.github/workflows/windows-preview.yml) still exists for testing;
+its Actions artifact wraps the same game ZIP inside a second ZIP and needs a GitHub sign-in.)
 
 This preview is for **Windows 10/11 x64**. It needs no installation, administrator access, internet
 connection, or separately installed browser runtime. Chromium is bundled, so the download is larger
@@ -97,13 +96,13 @@ Use the mouse, WASD, or arrow keys to steer. **Esc** pauses; **F11** toggles ful
 another application or minimizing pauses the round; return and click **Keep playing** to resume.
 Only one Loopfront instance runs at a time. Closing its window exits the application.
 
-The preview is **unsigned**, so Windows may display an unknown-publisher or SmartScreen warning.
-Download only from this repository's workflow and follow your computer's security policies. Do not
+The Windows build is **not code-signed**, so Windows may display an unknown-publisher or SmartScreen warning.
+Download only from this repository's releases and follow your computer's security policies. Do not
 disable Windows security protections to run it. Organizations may block unsigned applications.
 
 ## Updates and saved progress
 
-- **Windows:** close Loopfront, download a newer successful preview, extract it into a new folder, and launch its executable. Updates are manual; there is no automatic updater or Windows latest-release URL. After updating, the old extracted application folder can be removed.
+- **Windows:** close Loopfront, download the ZIP from a newer release, extract it into a new folder, and launch its executable. Updates are manual; there is no automatic updater. After updating, the old extracted application folder can be removed.
 - Desktop saves live under **`%APPDATA%\Loopfront`**, independent of the extraction folder and version. Keep that directory to retain names, settings, stars, records, coins, shop items, missions and daily usage.
 - **Android:** use the existing parent-gated update flow described above. Keep the same signing key for updates.
 - **Browser:** saves belong to the browser profile and page origin. Private browsing, clearing browser data, or moving a local HTML file can lose or separate progress.
@@ -160,8 +159,8 @@ npm run verify:windows --prefix desktop
 ```
 
 Packaging writes the ZIP and an unpacked validation copy under `desktop/dist/`. Local builds use
-version `0.1.0`; CI uses `0.1.N`, where N is the Windows workflow run number (independent of Android
-versions). The verifier checks the Windows executable, wrapper, version and bundled game against source.
+version `0.1.0`; releases use `0.1.N`, where N is the same number as the release tag `vN` and the
+Android version code. The verifier checks the Windows executable, wrapper, version and bundled game against source.
 
 The Windows icon is derived from the unchanged Android launcher artwork. Regenerate its SVG and
 seven ICO sizes with `npm run icon --prefix desktop` after installing the root Chromium test browser.
@@ -195,11 +194,12 @@ npx playwright install chromium
 npm run test:browser         # real-browser checks: keyboard, HUD layout at many sizes, touch, no network
 ```
 
-The existing Android CI runs both on relevant pull requests and before APK releases. **Its workflow
-is unchanged by this branch.** The separate [Windows preview workflow](.github/workflows/windows-preview.yml)
-runs shared web checks, packages on Windows, verifies the extracted ZIP and tests that packaged app.
-It has read-only repository permissions and uploads Actions artifacts only: it cannot publish a
-GitHub Release or replace an APK. Browser/harness results are not a substitute for a real Fire tablet;
+The [Build APK workflow](.github/workflows/build-apk.yml) runs on every relevant pull request and before
+every release: shared web checks, Android lint plus a validation APK, and the Windows package
+([reusable workflow](.github/workflows/windows-package.yml)) built, verified and tested on a Windows runner.
+On `main` it then signs the APK, checks the signing certificate fingerprint, the version and the bundled
+page, stages a draft release with both downloads and their checksums, verifies the staged files, and only
+then publishes it. A manual run can make an Android-only emergency release if Windows cannot be built. Browser/harness results are not a substitute for a real Fire tablet;
 Windows runner tests are also distinguished from a manual check on a personal Windows computer.
 
 ## Project layout
