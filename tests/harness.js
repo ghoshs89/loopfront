@@ -22,7 +22,8 @@ src = src.slice(0, tail) + `globalThis.__T = { entities, owner, counts, inArena,
   pickups, get nextPickupAt(){return nextPickupAt}, get zoomUntil(){return zoomUntil}, get bubbleUntil(){return bubbleUntil},
   get freezeUntil(){return freezeUntil}, get roundPower(){return roundPower},
   set roundLoops(v){roundLoops=v}, set roundPower(v){roundPower=v}, MISSIONS, dayKey, missionFor, usage, get arenaCells2(){return arenaCells}, setBoard, makeBoard, edgeDist, inPlay, randomPoint, get board(){return board},
-  TILE, DIRS, DIR_ANGLE, stampTileAt, queueTurn, get selectedMode(){return selectedMode}, get classic(){return !!diff.classic} };\n` + src.slice(tail);
+  TILE, DIRS, DIR_ANGLE, stampTileAt, queueTurn, get selectedMode(){return selectedMode}, get classic(){return !!diff.classic},
+  CHALLENGES, AVATARS, get nextKind(){return nextKind} };\n` + src.slice(tail);
 
 // ---- elements that start hidden in the HTML ----
 const seed = {};
@@ -129,6 +130,7 @@ function check(name, ok, extra) {
   if (!ok) failed++;
 }
 
+const tileOf2 = (v) => Math.floor((v - T.board.origin) / T.TILE);
 const angleNorm = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 function invariants(label) {
   const real = new Int32Array(T.counts.length);
@@ -1989,6 +1991,141 @@ function bigLand() {
   click('modeIsland'); click('playBtn');
   check('an Island round after Classic is the normal island', T.mode === 'playing' && !T.classic && T.board.shape === 'circle' && T.hearts === 1);
   check('the Classic explanation exists and starts hidden', /<div id="classicHowScreen" class="overlay hidden">/.test(html));
+}
+
+
+// =====================================================================
+// 23. Challenges and earnable buddies
+// =====================================================================
+{
+  const tc = (i) => T.board.origin + (i + 0.5) * T.TILE;
+  const kp = (k) => { fire('window:keydown', { key: k, repeat: false, target: null, preventDefault() {} }); fire('window:keyup', { key: k }); };
+  const runUntil = (cond, maxFrames) => { for (let f = 0; f < maxFrames && !cond(); f++) frames(1); return cond(); };
+  const openList = () => { click('challengesBtn'); return els.challengeList.children; };
+  const playChallenge = (i) => { const rows = openList(); fire(rows[i].children[2].id + ':click'); return T.player; };
+  const killPals = () => { for (const e of T.entities) if (!e.isPlayer && e.alive) T.kill(e, null, 'wall'); };
+  const snapshot = () => JSON.stringify({ coins: T.progress.coins, best: T.progress.best, cb: T.progress.classicBest, rounds: T.progress.rounds, stars: Object.keys(T.progress.stars).sort(), mission: T.progress.mission, earned: T.progress.coinsEarned });
+
+  freshGame({ difficulty: 'hard', breakMin: 0 });
+  T.settings.seenClassic = true;
+  let rows = openList();
+  check('the challenge list shows three challenges, none done yet', rows.length === 3 && [...rows].every(r => r.children[0].className === 'chmark') &&
+        [...rows].map(r => r.children[1].children[0].textContent).join('|') === 'First Rectangle|Half the Board|Full Board');
+  check('each challenge goal is five words or fewer', T.CHALLENGES.every(c => c.text.split(/\s+/).length <= 5));
+  click('challengeCloseBtn');
+
+  // ---- First Rectangle: fail, retry the same layout, then succeed ----
+  const before = snapshot();
+  let p = playChallenge(0);
+  check('First Rectangle: a 16 x 16 board, no pals, one life', T.board.tile === 30 && T.arenaCells2 === 16 * 16 * 36 && T.entities.filter(e => e.alive && !e.isPlayer).length === 0 && T.hearts === 1);
+  const start1 = [p.x, p.y, p.dir];
+  frames(20);
+  check('the goal is shown during play', !hasClass('goalPill', 'hidden') && els.goalPill.textContent === 'Goal: close one loop', els.goalPill.textContent);
+  runUntil(() => T.mode !== 'playing', 900);
+  check('a failed challenge says so and offers Retry and Challenges', T.mode === 'over' && els.ovTitle.textContent === 'Oops!' && els.ovCause.textContent === 'You bumped into the wall.' &&
+        els.againBtn.textContent === 'RETRY' && els.menuBtn.textContent === 'Challenges' && !T.progress.challenges.rect1);
+  click('againBtn');
+  p = T.player;
+  check('Retry starts the very same layout', p.x === start1[0] && p.y === start1[1] && p.dir === start1[2] && T.diff.challenge.id === 'rect1');
+  runUntil(() => p.y < tc(7), 300); kp('ArrowRight');
+  runUntil(() => p.x > tc(8), 300); kp('ArrowDown');
+  runUntil(() => p.y > tc(7), 300); kp('ArrowLeft');
+  runUntil(() => T.mode !== 'playing', 300);
+  check('closing one loop completes First Rectangle', T.mode === 'over' && els.ovTitle.textContent === 'CHALLENGE DONE!' && els.ovCause.textContent === 'You finished First Rectangle!' && T.progress.challenges.rect1 === true, `${els.ovTitle.textContent} / ${els.ovCause.textContent}`);
+  check('challenges pay no coins, stars or records and do not count for missions', snapshot() === before && hasClass('ovCoins', 'hidden') && hasClass('ovStars', 'hidden'));
+  check('completion is saved', JSON.parse(localStorage._d['loopfront.progress']).challenges.rect1 === true);
+  click('againBtn');
+  p = T.player;
+  runUntil(() => p.y < tc(7), 300); kp('ArrowRight');
+  runUntil(() => p.x > tc(8), 300); kp('ArrowDown');
+  runUntil(() => p.y > tc(7), 300); kp('ArrowLeft');
+  runUntil(() => T.mode !== 'playing', 300);
+  check('doing it again changes nothing else', T.progress.challenges.rect1 === true && snapshot() === before);
+  click('menuBtn');
+  check('"Challenges" goes back to the list, now ticked', T.mode === 'menu' && !hasClass('challengeScreen', 'hidden') && els.challengeList.children[0].children[0].className === 'chmark done');
+  click('challengeCloseBtn');
+
+  // ---- Half the Board ----
+  p = playChallenge(1);
+  check('Half the Board: a 20 x 20 board with two pals at fixed spots', T.arenaCells2 === 20 * 20 * 36 && T.entities.filter(e => e.alive && !e.isPlayer).length === 2);
+  frames(20);
+  check('the goal shows live progress', /^Goal 50%: now \d+\.\d%$/.test(els.goalPill.textContent), els.goalPill.textContent);
+  killPals();
+  for (let row = 0; row < 10; row++) for (let col = 0; col < 20; col++) T.stampTileAt(p, tc(col), tc(row), false);
+  frames(2);
+  check('owning half the board completes Half the Board', T.mode === 'over' && els.ovTitle.textContent === 'CHALLENGE DONE!' && T.progress.challenges.half === true, `${T.pctOf(p).toFixed(1)}%`);
+  check('pals do not come back during a challenge', T.entities.every(e => e.isPlayer || !e.alive || e.respawnAt === 0));
+
+  // ---- Full Board: needs every tile; earns the Unicorn ----
+  p = playChallenge(2);
+  killPals();
+  for (let row = 0; row < 16; row++) for (let col = 0; col < 16; col++) if (!(row === 0 && col >= 4 && col <= 8)) T.stampTileAt(p, tc(col), tc(row), false);
+  p.x = p.px = tc(3); p.y = p.py = tc(2); p.dir = 3; p.angle = T.DIR_ANGLE[3]; p.pend = -1; p.tx.length = 0; p.ty.length = 0; p.tl.length = 0;
+  frames(2);
+  check('Full Board is not done one strip short', T.mode === 'playing' && !T.progress.challenges.full);
+  runUntil(() => p.y < tc(1), 120); kp('ArrowRight');
+  runUntil(() => T.mode !== 'playing', 300);
+  check('owning every tile completes Full Board', T.mode === 'over' && els.ovTitle.textContent === 'CHALLENGE DONE!' && els.ovPct.textContent === '100.00%' && T.progress.challenges.full === true, els.ovTitle.textContent);
+  check('finishing Full Board earns the Unicorn', T.progress.avatars.unicorn === true && JSON.parse(localStorage._d['loopfront.progress']).avatars.unicorn === true);
+  check('a challenge win still pays no coins and sets no record', T.progress.coins === 0 && T.progress.classicBest === 0 && T.progress.best === 0);
+
+  // ---- family limits apply to challenges ----
+  T.parentCfg.dailyMin = 30; T.usage.sec = 5000;
+  click('againBtn');
+  check('Retry of a challenge respects the daily limit', !hasClass('doneScreen', 'hidden') && T.mode === 'over');
+  click('doneHomeBtn');
+  fire('menuBtn:click');
+  rows = openList();
+  fire(rows[0].children[2].id + ':click');
+  check('starting a challenge from the list respects the daily limit too', !hasClass('doneScreen', 'hidden') && T.mode === 'menu');
+  T.parentCfg.dailyMin = 0;
+
+  // ---- buddies ----
+  freshGame({ difficulty: 'hard', breakMin: 0 });
+  T.settings.seenClassic = true;
+  const charBtns = () => els.characters.children;
+  check('eight characters plus three locked buddies', charBtns().length === 11 && [8, 9, 10].every(i => /locked/.test(charBtns()[i].className)) && !/locked/.test(charBtns()[0].className));
+  fire(charBtns()[9].id + ':click');
+  check('a locked buddy explains how to earn it, with progress', els.avatarMsg.textContent === 'Unlock: Own 25% in Classic (best 0.00%)' && T.settings.character === 'cat', els.avatarMsg.textContent);
+  fire(charBtns()[8].id + ':click');
+  check('another locked buddy explains its feat', els.avatarMsg.textContent === 'Unlock: Draw a loop in Classic' && T.settings.character === 'cat', els.avatarMsg.textContent);
+
+  click('modeClassic'); click('playBtn');
+  p = T.player; killPals();
+  const coins0 = T.progress.coins;
+  { const cx = tileOf2(p.x), cy = tileOf2(p.y);
+    const pts = [[cx, cy - 1], [cx, cy - 4], [cx + 3, cy - 4], [cx + 3, cy - 1]];
+    T.addTrailPoint(p, tc(pts[0][0]), tc(pts[0][1]));
+    for (let k = 1; k < pts.length; k++) { const [a1, b1] = pts[k - 1], [a2, b2] = pts[k]; const n = 30; for (let q = 1; q <= n; q++) T.addTrailPoint(p, tc(a1 + (a2 - a1) * q / n), tc(b1 + (b2 - b1) * q / n)); }
+    p.x = p.px = tc(cx + 1); p.y = p.py = tc(cy - 1);
+    T.capture(p); }
+  check('a first Classic loop earns the Owl', T.progress.avatars.owl === true && !/locked/.test(charBtns()[8].className));
+  for (let row = 0; row < 16; row++) for (let col = 0; col < 56; col++) T.stampTileAt(p, tc(col), tc(row), false);
+  frames(2);
+  check('owning 25% in Classic earns the Dino', T.progress.avatars.dino === true && T.pctOf(p) >= 25, `${T.pctOf(p).toFixed(1)}%`);
+  const avatarsNow = JSON.stringify(T.progress.avatars);
+  frames(30);
+  T.capture(p);
+  check('earning again gives nothing extra', JSON.stringify(T.progress.avatars) === avatarsNow && T.progress.coins === coins0);
+  T.kill(p, null, 'wall');
+  fire('menuBtn:click');
+  fire(charBtns()[9].id + ':click');
+  check('an earned buddy can be chosen', T.settings.character === 'dino' && els.avatarMsg.textContent === '' && /sel/.test(charBtns()[9].className));
+  boot(localStorage._d);
+  check('earned buddies and the chosen one survive a restart', T.progress.avatars.owl && T.progress.avatars.dino && T.settings.character === 'dino');
+  click('playBtn');
+  check('the player plays as the chosen buddy', T.player.character === 'dino');
+  let palBuddy = false;
+  for (let k = 0; k < 15; k++) { click('againBtn'); for (const e of T.entities) if (!e.isPlayer && e.alive && ['owl', 'dino', 'unicorn'].includes(e.character)) palBuddy = true; }
+  check('pals never wear earned buddies', !palBuddy);
+
+  boot(Object.assign({}, DEFAULT_STORE, { 'loopfront.settings': JSON.stringify({ seenHowTo: true, character: 'unicorn' }), 'loopfront.progress': JSON.stringify({ avatars: { owl: true, ghost: true }, challenges: { rect1: true, nope: true } }) }));
+  check('a buddy that was not earned cannot be worn from saved data', T.settings.character === 'cat' && T.progress.avatars.owl === true && !('ghost' in T.progress.avatars) && T.progress.challenges.rect1 === true && !('nope' in T.progress.challenges));
+  openParentViaGate();
+  click('resetBtn'); click('resetBtn');
+  check('reset clears challenges and buddies', Object.keys(T.progress.avatars).length === 0 && Object.keys(T.progress.challenges).length === 0);
+  click('parentCloseBtn');
+  check('the challenge list exists and starts hidden', /<div id="challengeScreen" class="overlay hidden">/.test(html));
 }
 
 

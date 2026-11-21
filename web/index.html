@@ -165,6 +165,19 @@
   .moderow { display: flex; gap: 8px; margin: 0 0 12px; }
   .moderow button { flex: 1; min-height: 56px; border-radius: 16px; border: 3px solid var(--ink); background: #fff; font-size: 20px; }
   .moderow button.sel { background: var(--sun); }
+  #characters button.locked { background: #eceff4; }
+  #characters button.locked canvas { opacity: 0.55; }
+  #avatarMsg { min-height: 1.3em; font-size: 15px; opacity: 0.85; }
+  .chlist { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 12px; text-align: left; }
+  .chrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 16px; border: 3px solid var(--ink); background: #f4fbff; }
+  .chrow .chtext { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.15; }
+  .chrow .chname { font-size: 19px; }
+  .chrow .chgoal { font-size: 15px; opacity: 0.75; }
+  .chmark { position: relative; width: 30px; height: 30px; flex: none; border-radius: 50%; border: 3px solid var(--ink); background: #fff; }
+  .chmark.done { background: #7ae582; }
+  .chmark.done::after { content: ''; position: absolute; left: 8px; top: 2px; width: 7px; height: 14px; border: solid #fff; border-width: 0 4px 4px 0; transform: rotate(45deg); }
+  .chrow button { min-width: 84px; min-height: 56px; border-radius: 14px; border: 3px solid var(--ink); background: var(--green); font-size: 18px; }
+  #goalPill { padding: 3px 12px; border-width: 3px; border-radius: 18px; font-size: 15px; }
 
   #ovCreature, #breakCreature { width: 120px; height: 120px; display: block; margin: 0 auto; }
   #ovCause { min-height: 1.3em; opacity: 0.8; }
@@ -258,6 +271,7 @@
       </div>
       <div id="hudExtras">
         <div id="heartsPanel" class="panel" aria-label="Hearts left"><canvas id="heartsCv" width="132" height="32"></canvas></div>
+        <div id="goalPill" class="panel hidden"></div>
         <div id="powerPill" class="panel hidden"><span id="powerName"></span><span id="powerBarBox"><i id="powerBar"></i></span></div>
       </div>
     </div>
@@ -275,6 +289,7 @@
     <h1 class="logo"><span style="color:#ef476f">L</span><span style="color:#f77f00">O</span><span style="color:#ffd23f">O</span><span style="color:#06d6a0">P</span><span style="color:#118ab2">F</span><span style="color:#8338ec">R</span><span style="color:#ff70a6">O</span><span style="color:#ef476f">N</span><span style="color:#f77f00">T</span></h1>
     <div class="field">Pick your buddy</div>
     <div id="characters" class="row"></div>
+    <div id="avatarMsg"></div>
     <div class="field">Pick a colour</div>
     <div id="swatches" class="row"></div>
     <div class="namerow">
@@ -299,6 +314,9 @@
     <button id="playBtn" class="btn" type="button">PLAY</button>
     <div class="icons">
       <button id="howBtn" class="round" type="button" aria-label="How to play">?</button>
+      <button id="challengesBtn" class="round" type="button" aria-label="Challenges">
+        <svg viewBox="0 0 32 32"><path d="M10 5 H22 V12 C22 17 19 19 16 19 C13 19 10 17 10 12 Z" fill="#ffd23f" stroke="#2b2d42" stroke-width="2.5" stroke-linejoin="round"/><path d="M10 8 H5 C5 13 8 14 10 14 M22 8 H27 C27 13 24 14 22 14" fill="none" stroke="#2b2d42" stroke-width="2.5"/><path d="M16 19 V24 M10 27 H22 L20 24 H12 Z" fill="#ffd23f" stroke="#2b2d42" stroke-width="2.5" stroke-linejoin="round"/></svg>
+      </button>
       <button id="starsBtn" class="round" type="button" aria-label="My stars">
         <svg viewBox="0 0 32 32"><polygon points="16,3 20,12 30,13 22,20 25,30 16,24 7,30 10,20 2,13 12,12" fill="#ffd23f" stroke="#2b2d42" stroke-width="2.5" stroke-linejoin="round"/></svg>
       </button>
@@ -389,6 +407,14 @@
       </div>
     </div>
     <button id="classicOkBtn" class="btn green" type="button">Let's go!</button>
+  </div>
+</div>
+
+<div id="challengeScreen" class="overlay hidden">
+  <div class="card panel">
+    <h2>Challenges</h2>
+    <div id="challengeList" class="chlist"></div>
+    <button id="challengeCloseBtn" class="btn" type="button">Close</button>
   </div>
 </div>
 
@@ -555,6 +581,21 @@ const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];             // east, south, wes
 const DIR_ANGLE = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
 const KEY_DIR = { right: 0, down: 1, left: 2, up: 3 };
 
+// Challenges: small Classic boards with a fixed layout, so Retry is always the same puzzle.
+// [column, row, direction] with direction 0 east, 1 south, 2 west, 3 north.
+const CHALLENGES = [
+  { id: 'rect1', name: 'First Rectangle', text: 'Close one loop', tiles: 16, start: [7, 9, 3], pals: [] },
+  { id: 'half', name: 'Half the Board', text: 'Own half the board', tiles: 20, start: [4, 10, 0], pals: [[15, 4, 2], [15, 15, 2]], target: 50 },
+  { id: 'full', name: 'Full Board', text: 'Own every tile', tiles: 16, start: [3, 8, 0], pals: [[12, 3, 2], [12, 12, 2]], target: 100 }
+];
+// Buddies earned by doing something special; once earned they stay.
+const AVATARS = [
+  { id: 'owl', name: 'Owl', feat: 'Draw a loop in Classic' },
+  { id: 'dino', name: 'Dino', feat: 'Own 25% in Classic' },
+  { id: 'unicorn', name: 'Unicorn', feat: 'Finish Full Board' }
+];
+const AVATAR_IDS = AVATARS.map(a => a.id);
+
 // Dress-up shop: fixed, visible prices in coins earned by playing. No real money, no timers, no random items.
 const SHOP = {
   hats: [
@@ -633,8 +674,8 @@ const show = el => el.classList.remove('hidden');
 const hide = el => el.classList.add('hidden');
 const isOpen = el => !el.classList.contains('hidden');
 const toggleClass = (el, cls, on) => { if (on) el.classList.add(cls); else el.classList.remove(cls); };
-const doneScreen = $('doneScreen'), classicHowScreen = $('classicHowScreen');
-const OVERLAYS = [classicHowScreen, howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, doneScreen, gateScreen, parentScreen, overScreen, startScreen];
+const doneScreen = $('doneScreen'), classicHowScreen = $('classicHowScreen'), challengeScreen = $('challengeScreen');
+const OVERLAYS = [challengeScreen, classicHowScreen, howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, doneScreen, gateScreen, parentScreen, overScreen, startScreen];
 
 let vw = 1, vh = 1, dpr = 1;
 function resize() {
@@ -977,6 +1018,7 @@ function capture(e) {
       roundLoops++;
       missionEvent('loops5', 1);
       missionEvent('bigloop1', gained);
+      if (diff.classic && !diff.challenge) unlockAvatar('owl');
       addFloat(e.x, e.y - 34, '+' + gained.toFixed(2) + '%', e.hex);
       if (roundLoops % 3 === 0) addFloat(e.x, e.y - 62, 'Great loop!', '#8338ec');
       confetti(e.x, e.y, 24);
@@ -1027,8 +1069,8 @@ function newAI() {
   };
 }
 
-function spawnEntity(e) {
-  const p = findSpawn();
+function spawnEntity(e, at) {
+  const p = at || findSpawn();
   if (!p) return false;
   e.alive = true;
   e.x = e.px = p.x; e.y = e.py = p.y;
@@ -1043,6 +1085,7 @@ function spawnEntity(e) {
     e.dir = Math.abs(tx) >= Math.abs(ty) ? (tx >= 0 ? 0 : 2) : (ty >= 0 ? 1 : 3);
     e.angle = e.targetAngle = DIR_ANGLE[e.dir];
     e.pend = -1;
+    if (at && at.dir !== undefined) { e.dir = at.dir; e.angle = e.targetAngle = DIR_ANGLE[e.dir]; }
   }
   e.shieldUntil = e.isPlayer ? simTime + diff.shield : 0;
   e.wowUntil = 0; e.bumpAt = -9;
@@ -1126,7 +1169,7 @@ const parentCfg = { difficulty: 'easy', breakMin: 30, saver: false, lockUntil: 0
 // today's play, for the daily limit and the grown-ups summary (a separate key so progress resets never touch it)
 const usage = { day: -1, sec: 0, extraSec: 0, rounds: 0, best: 0 };
 let usageDirty = false, usageSavedSec = 0;
-const progress = { best: 0, classicBest: 0, rounds: 0, stars: {}, coins: 0, owned: {}, coinsEarned: 0, bought: 0,
+const progress = { best: 0, classicBest: 0, rounds: 0, stars: {}, challenges: {}, avatars: {}, coins: 0, owned: {}, coinsEarned: 0, bought: 0,
                    mission: { day: -1, done: false, count: 0 }, streak: 0, missionsDone: 0, lastDoneDay: 0 };
 
 const particles = [];
@@ -1152,7 +1195,7 @@ function loadStore() {
   if (s && typeof s === 'object') {
     if (typeof s.name === 'string' && s.name !== 'You') settings.name = s.name.slice(0, 14);
     if (PLAYER_COLORS.indexOf(s.color) >= 0) settings.color = s.color;
-    if (CHARACTERS.indexOf(s.character) >= 0) settings.character = s.character;
+    if (CHARACTERS.indexOf(s.character) >= 0 || AVATAR_IDS.indexOf(s.character) >= 0) settings.character = s.character;
     if (typeof s.sound === 'boolean') settings.sound = s.sound;
     if (typeof s.seenHowTo === 'boolean') settings.seenHowTo = s.seenHowTo;
     if (typeof s.seenClassic === 'boolean') settings.seenClassic = s.seenClassic;
@@ -1202,6 +1245,13 @@ function loadStore() {
       }
     }
   }
+  if (g && typeof g === 'object') {
+    for (const [field, ids] of [['challenges', CHALLENGES.map(c => c.id)], ['avatars', AVATAR_IDS]]) {
+      const src = g[field];
+      if (src && typeof src === 'object') for (const k of Object.keys(src)) if (src[k] === true && ids.indexOf(k) >= 0) progress[field][k] = true;
+    }
+  }
+  if (AVATAR_IDS.indexOf(settings.character) >= 0 && !progress.avatars[settings.character]) settings.character = 'cat';   // not earned yet
   // what is worn must be owned: anything tampered with or no longer available falls back to the free default
   for (const tab of Object.keys(SHOP)) {
     if (!owns(tab, settings[SHOP_SLOT[tab]])) settings[SHOP_SLOT[tab]] = SHOP[tab][0].id;
@@ -1209,11 +1259,15 @@ function loadStore() {
 }
 
 let selectedMode = 'island';     // the start-screen choice; every launch begins on Island
-function startMatch(withPlayer, modeName) {
+let nextKind = { mode: 'island', id: null };   // what Play / Retry will start
+function startMatch(withPlayer, modeName, challengeId) {
   // the rules are a snapshot taken here, so nothing on a menu can change a round in progress
-  const classicRound = !!withPlayer && modeName === 'classic';
-  diff = classicRound ? CLASSIC : (DIFFICULTY[parentCfg.difficulty] || DIFFICULTY.easy);
-  if (classicRound) setBoard(makeBoard('square', 2 * (CLASSIC_TILES * TILE / 2 + HEAD_R + 2), TILE));
+  const ch = withPlayer && modeName === 'challenge' ? CHALLENGES.find(c => c.id === challengeId) || null : null;
+  const classicRound = !!withPlayer && (modeName === 'classic' || !!ch);
+  diff = ch ? Object.assign({}, CLASSIC, { bots: ch.pals.length, aggr: 0.35, challenge: ch })
+            : classicRound ? CLASSIC : (DIFFICULTY[parentCfg.difficulty] || DIFFICULTY.easy);
+  if (ch) setBoard(makeBoard('square', 2 * (ch.tiles * TILE / 2 + HEAD_R + 2), TILE));
+  else if (classicRound) setBoard(makeBoard('square', 2 * (CLASSIC_TILES * TILE / 2 + HEAD_R + 2), TILE));
   else if (board.tile) setBoard(makeBoard('circle'));
   resetGrid();
   simTime = 0;
@@ -1235,7 +1289,7 @@ function startMatch(withPlayer, modeName) {
     player.character = settings.character;
     player.hat = settings.hat;
     setColor(player, settings.color);
-    spawnEntity(player);
+    spawnEntity(player, ch ? fixedSpot(ch.start) : null);
   }
   const wanted = withPlayer ? diff.bots : diff.bots + 1;
   let ci = 0;
@@ -1246,6 +1300,7 @@ function startMatch(withPlayer, modeName) {
     e.character = pick(CHARACTERS);
     e.hat = Math.random() < 0.35 ? pick(HAT_IDS) : 'none';          // pals sometimes wear hats too
     setColor(e, colors[ci % colors.length]);
+    if (ch) { spawnEntity(e, fixedSpot(ch.pals[ci])); ci++; continue; }
     ci++;
     if (!spawnEntity(e)) e.respawnAt = simTime + 1;
   }
@@ -1357,7 +1412,7 @@ const GOALS = [
 // Awards any goals now reached. `silent` is the end-of-round pass: it works even though the player is
 // no longer alive, records the star for the results screen, and skips the floating text and sound.
 function checkStars(silent) {
-  if (!player) return;
+  if (!player || diff.challenge) return;
   for (const g of GOALS) {
     if (progress.stars[g.id] || !g.ok()) continue;
     progress.stars[g.id] = true;
@@ -1401,6 +1456,7 @@ function syncMissionDay() {
 
 // progress events from play: counted ones add up, "best so far" ones keep the largest value
 function missionEvent(id, n) {
+  if (diff.challenge) return;                       // daily missions belong to regular play
   const m = progress.mission;
   if (m.day < 0 || m.done) return;
   const ms = missionFor(m.day);
@@ -1464,6 +1520,92 @@ function refreshMission() {
   $('missionStreak').textContent = st >= 2 ? st + ' days in a row' : '';
 }
 
+/* ---- challenges ---- */
+function fixedSpot([col, row, dir]) {
+  return { x: board.origin + (col + 0.5) * TILE, y: board.origin + (row + 0.5) * TILE, dir };
+}
+function challengeMet(ch, pct) {
+  if (ch.id === 'rect1') return roundLoops >= 1;
+  if (ch.target >= 100) return counts[player.id] >= arenaCells;
+  return pct >= ch.target;
+}
+function challengeGoalText(ch) {
+  if (ch.id === 'rect1') return 'Goal: close one loop';
+  const now = player ? pctOf(player) : 0;
+  return 'Goal ' + ch.target + '%: now ' + now.toFixed(ch.target >= 100 ? 2 : 1) + '%';
+}
+// The end of a challenge round: one result, no coins, stars, records or missions.
+function endChallenge(pct, killer, cause) {
+  const ch = diff.challenge;
+  const success = cause === 'goal' || cause === 'win';
+  mode = 'over';
+  pendingEnd = null;
+  setAwake(false);
+  if (success) {
+    if (!progress.challenges[ch.id]) { progress.challenges[ch.id] = true; saveProgress(); }
+    if (ch.id === 'full') unlockAvatar('full-board');
+  }
+  flushUsage();
+  const who = killer ? killer.name : 'Someone';
+  const causes = {
+    wall: 'You bumped into the wall.', self: 'You ran over your own trail.', trail: who + ' crossed your trail.',
+    headon: 'You bumped into ' + who + '.', swallowed: who + ' took all your land.'
+  };
+  $('ovTitle').textContent = success ? 'CHALLENGE DONE!' : 'Oops!';
+  $('ovCause').textContent = success ? 'You finished ' + ch.name + '!' : (causes[cause] || '');
+  $('ovPct').textContent = pct.toFixed(2) + '%';
+  $('ovKills').textContent = String(player.kills);
+  $('ovTime').textContent = fmtTime(simTime - player.bornAt);
+  $('ovBest').textContent = Math.max(bestPct, pct).toFixed(2) + '%';
+  hide($('ovStars')); hide($('ovCoins'));
+  $('againBtn').textContent = 'RETRY';
+  $('menuBtn').textContent = 'Challenges';
+  const g = $('ovCreature').getContext('2d');
+  g.clearRect(0, 0, 160, 160);
+  drawCreature(g, 80, 100, 44, player.character, player.hex, Math.PI / 2, success ? 'happy' : 'sad', true, player.hat);
+  sfx(success ? 'star' : 'oops');
+  clearTimeout(overTimer);
+  overTimer = setTimeout(() => { if (mode === 'over') show(overScreen); }, success ? 100 : 650);
+}
+function openChallenges() {
+  const list = $('challengeList');
+  list.textContent = '';
+  for (const ch of CHALLENGES) {
+    const row = document.createElement('div');
+    row.className = 'chrow';
+    const mark = document.createElement('span');
+    mark.className = progress.challenges[ch.id] ? 'chmark done' : 'chmark';
+    const text = document.createElement('div');
+    text.className = 'chtext';
+    const nm = document.createElement('span'); nm.className = 'chname'; nm.textContent = ch.name;
+    const goal = document.createElement('span'); goal.className = 'chgoal'; goal.textContent = ch.text;
+    text.appendChild(nm); text.appendChild(goal);
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.textContent = 'Play';
+    play.setAttribute('aria-label', 'Play ' + ch.name);
+    play.addEventListener('click', () => { nextKind = { mode: 'challenge', id: ch.id }; requestStart(true); });
+    row.appendChild(mark); row.appendChild(text); row.appendChild(play);
+    list.appendChild(row);
+  }
+  show(challengeScreen);
+}
+
+/* ---- earnable buddies ---- */
+function unlockAvatar(feat) {
+  const id = feat === 'full-board' ? 'unicorn' : feat;
+  if (AVATAR_IDS.indexOf(id) < 0 || progress.avatars[id]) return;   // once only
+  progress.avatars[id] = true;
+  saveProgress();
+  if (mode === 'playing' && player) { addFloat(player.x, player.y - 90, 'New buddy!', '#06a77d'); confetti(player.x, player.y, 24); }
+  sfx('star');
+  refreshChars();
+}
+function avatarProgress(id) {
+  if (id === 'dino') return ' (best ' + progress.classicBest.toFixed(2) + '%)';
+  return '';
+}
+
 // Goals that are not tied to one round (coins, shopping). Never pays coins itself, so there is no loop.
 function checkLifetimeStars() {
   const got = [];
@@ -1481,6 +1623,7 @@ function checkLifetimeStars() {
 // the all-time best actually increases, so ordinary frames never touch storage.
 function noteBest(pct) {
   if (pct > bestPct) bestPct = pct;
+  if (diff.challenge) return;                       // challenge scores never touch the records
   if (bestPct > usage.best) { usage.best = bestPct; usageDirty = true; }
   const key = diff.classic ? 'classicBest' : 'best';      // Island keeps the original record
   if (bestPct > progress[key]) {
@@ -1539,7 +1682,7 @@ function kill(e, killer, cause) {
     if (inStep) { if (!pendingEnd) pendingEnd = { pct, killer, cause }; }
     else endGame(pct, killer, cause);
   }
-  else e.respawnAt = simTime + rand(2, 4.5);
+  else e.respawnAt = diff.challenge ? 0 : simTime + rand(2, 4.5);     // challenges: pals do not come back
 }
 
 function loseHeart(e, killer, cause) {
@@ -1570,6 +1713,7 @@ function loseHeart(e, killer, cause) {
 function endGame(pct, killer, cause) {
   if (mode !== 'playing') return;
   accountPlay(false);
+  if (diff.challenge) { endChallenge(pct, killer, cause); return; }
   checkStars(true);                                // final achievements, including this very step's tags
   mode = 'over';
   pendingEnd = null;
@@ -1603,6 +1747,7 @@ function endGame(pct, killer, cause) {
   toggleClass($('ovCoins'), 'hidden', earned === 0);
   $('ovTitle').textContent = win ? (diff.classic ? 'BOARD CHAMPION!' : 'ISLAND CHAMPION!') : 'Oops!';
   $('againBtn').textContent = diff.classic ? 'RETRY' : 'PLAY AGAIN';
+  $('menuBtn').textContent = 'Home';
   $('ovCause').textContent = causes[cause] || '';
   $('ovPct').textContent = pct.toFixed(2) + '%';
   $('ovKills').textContent = String(player.kills);
@@ -2076,6 +2221,8 @@ function stepCore(h) {
     missionEvent('play90', simTime - player.bornAt);
     updatePickups();
     checkStars(false);
+    if (diff.classic && !diff.challenge && p >= 25) unlockAvatar('dino');
+    if (diff.challenge && !pendingEnd && challengeMet(diff.challenge, p)) pendingEnd = { pct: p, killer: null, cause: 'goal' };
     if (counts[player.id] >= (diff.classic ? arenaCells : arenaCells * 0.999) && !pendingEnd) pendingEnd = { pct: p, killer: null, cause: 'win' };
   }
 }
@@ -2157,6 +2304,19 @@ function drawCreature(c, x, y, r, type, color, angle, mood, noPointer, hat) {
     case 'chick':
       poly([-0.3, -0.92, -0.28, -1.32, -0.1, -1.0, 0, -1.42, 0.1, -1.0, 0.28, -1.32, 0.3, -0.92], color, true);
       break;
+    case 'owl':
+      poly([-0.85, -0.45, -0.7, -1.2, -0.3, -0.85], color, true);
+      poly([0.85, -0.45, 0.7, -1.2, 0.3, -0.85], color, true);
+      break;
+    case 'dino':
+      poly([-0.55, -0.8, -0.38, -1.3, -0.15, -0.95], '#06d6a0', true);
+      poly([-0.18, -0.96, 0, -1.45, 0.18, -0.96], '#06d6a0', true);
+      poly([0.15, -0.95, 0.38, -1.3, 0.55, -0.8], '#06d6a0', true);
+      break;
+    case 'unicorn':
+      disc(-0.72, -0.55, 0.22, '#ff70a6'); disc(-0.82, -0.2, 0.2, '#8338ec'); disc(-0.75, 0.15, 0.18, '#3a86ff');
+      poly([-0.16, -0.92, 0.16, -0.92, 0, -1.75], '#ffd23f', true);
+      break;
     case 'fox':
       poly([-0.9, -0.2, -0.68, -1.45, -0.05, -0.9], color, true);
       poly([0.9, -0.2, 0.68, -1.45, 0.05, -0.9], color, true);
@@ -2213,7 +2373,7 @@ function drawCreature(c, x, y, r, type, color, angle, mood, noPointer, hat) {
 
   // 4. mouth
   c.lineWidth = lw * 0.8;
-  if (type === 'chick') {
+  if (type === 'chick' || type === 'owl') {
     poly([-0.2, 0.22, 0.2, 0.22, 0, 0.55], '#ff9f1c', true);
   } else if (mood === 'wow') {
     c.beginPath(); c.arc(0, 0.5 * r, 0.14 * r, 0, TAU); c.fillStyle = INK; c.fill();
@@ -2597,6 +2757,9 @@ function updateHud() {
     statKills.textContent = String(player.kills);
   }
   updatePower();
+  const ch = mode === 'playing' && diff.challenge;
+  toggleClass($('goalPill'), 'hidden', !ch);
+  if (ch) $('goalPill').textContent = challengeGoalText(ch);
 }
 
 // the pill under the counters shows whichever power-up has the most time left
@@ -2731,7 +2894,7 @@ function startGame() {
   nickInput.blur();
   syncMissionDay();                                // today's mission, decided between rounds
   syncUsageDay();
-  startMatch(true, selectedMode);
+  startMatch(true, nextKind.mode, nextKind.id);
   paused = false;
   mode = 'playing';
   activeSince = performance.now();                 // a fresh stamp: menus and results never count
@@ -2759,12 +2922,14 @@ function grantMore() {
   usage.extraSec = over + 900;
   flushUsage();
   hide(doneScreen);
-  requestStart();
+  requestStart(true);
 }
-function requestStart() {
+function requestStart(keepKind) {
+  // from the start screen PLAY means the chosen mode; Retry and challenge buttons keep what they set
+  if (keepKind !== true && mode === 'menu') nextKind = { mode: selectedMode, id: null };
   if (limitReached()) { showDone(); return; }       // between rounds only, and before the break reminder
   if (parentCfg.breakMin > 0 && playedSec >= parentCfg.breakMin * 60) { showBreak(); return; }
-  if (selectedMode === 'classic') {
+  if (nextKind.mode !== 'island') {
     if (!settings.seenClassic) { show(classicHowScreen); return; }
   } else if (!settings.seenHowTo) { openHow(true); return; }
   startGame();
@@ -3075,6 +3240,8 @@ function resetProgress() {
   resetArmedAt = 0;
   progress.best = 0; progress.classicBest = 0; progress.rounds = 0; progress.stars = {};
   progress.coins = 0; progress.owned = {}; progress.coinsEarned = 0; progress.bought = 0;
+  progress.challenges = {}; progress.avatars = {};
+  if (AVATAR_IDS.indexOf(settings.character) >= 0) settings.character = 'cat';
   progress.mission = { day: -1, done: false, count: 0 }; progress.streak = 0; progress.missionsDone = 0; progress.lastDoneDay = 0;
   missionDirty = false;
   settings.hat = 'none'; settings.trail = 'plain'; settings.theme = 'sand';
@@ -3105,24 +3272,39 @@ function refreshSwatches() {
 
 const charButtons = [];
 function buildCharacters() {
-  for (const type of CHARACTERS) {
+  for (const type of CHARACTERS.concat(AVATAR_IDS)) {
     const b = document.createElement('button');
     b.type = 'button';
     b.setAttribute('aria-label', type);
     const cv = document.createElement('canvas');
     cv.width = 96; cv.height = 96;
     b.appendChild(cv);
-    b.addEventListener('click', () => { settings.character = type; saveSettings(); refreshChars(); });
+    b.addEventListener('click', () => pickCharacter(type));
     charBox.appendChild(b);
     charButtons.push({ b, cv, type });
   }
 }
+function pickCharacter(type) {
+  const av = AVATARS.find(a => a.id === type);
+  if (av && !progress.avatars[type]) {             // locked: say how to earn it
+    $('avatarMsg').textContent = 'Unlock: ' + av.feat + avatarProgress(type);
+    return;
+  }
+  $('avatarMsg').textContent = '';
+  settings.character = type; saveSettings(); refreshChars();
+}
 function refreshChars() {
   for (const c of charButtons) {
-    c.b.className = c.type === settings.character ? 'sel' : '';
+    const locked = AVATAR_IDS.indexOf(c.type) >= 0 && !progress.avatars[c.type];
+    c.b.className = (c.type === settings.character ? 'sel' : '') + (locked ? ' locked' : '');
     const g = c.cv.getContext('2d');
     g.clearRect(0, 0, 96, 96);
-    drawCreature(g, 48, 62, 26, c.type, settings.color, 0.5, 'happy', true, settings.hat);
+    drawCreature(g, 48, 62, 26, c.type, locked ? '#c7ccd6' : settings.color, 0.5, 'happy', true, locked ? 'none' : settings.hat);
+    if (locked) {                                   // a little padlock
+      g.lineWidth = 4; g.strokeStyle = INK; g.fillStyle = '#ffd23f';
+      g.beginPath(); g.arc(72, 70, 9, Math.PI, TAU); g.stroke();
+      g.beginPath(); g.rect(60, 70, 24, 18); g.fill(); g.stroke();
+    }
   }
 }
 
@@ -3145,9 +3327,15 @@ $('modeClassic').addEventListener('click', () => setMode('classic'));
 $('classicOkBtn').addEventListener('click', () => {
   settings.seenClassic = true; saveSettings();
   hide(classicHowScreen);
-  requestStart();
+  requestStart(true);
 });
-$('menuBtn').addEventListener('click', showMenu);
+$('menuBtn').addEventListener('click', () => {
+  const toList = nextKind.mode === 'challenge';
+  showMenu();
+  if (toList) openChallenges();
+});
+$('challengesBtn').addEventListener('click', openChallenges);
+$('challengeCloseBtn').addEventListener('click', () => hide(challengeScreen));
 $('diceBtn').addEventListener('click', () => { nickInput.value = pick(FUN_NAMES); });
 $('howBtn').addEventListener('click', () => openHow(false));
 $('howOkBtn').addEventListener('click', () => {
@@ -3200,7 +3388,7 @@ $('updateGetBtn').addEventListener('click', () => {
 $('resetBtn').addEventListener('click', resetProgress);
 $('parentCloseBtn').addEventListener('click', closeParent);
 
-const noOverlayOpen = () => ![classicHowScreen, howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, doneScreen, gateScreen, parentScreen].some(isOpen);
+const noOverlayOpen = () => ![challengeScreen, classicHowScreen, howScreen, starsScreen, shopScreen, pauseScreen, breakScreen, doneScreen, gateScreen, parentScreen].some(isOpen);
 
 const isEditable = t => !!t && (t.isContentEditable === true || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''));
 const isInteractive = t => isEditable(t) || (!!t && !!t.closest && !!t.closest('button, a[href], [role="button"]'));
@@ -3299,6 +3487,7 @@ window.onLoopfrontBack = () => {
   if (isOpen(howScreen)) { closeHow(); return true; }
   if (isOpen(starsScreen)) { hide(starsScreen); return true; }
   if (isOpen(classicHowScreen)) { hide(classicHowScreen); return true; }
+  if (isOpen(challengeScreen)) { hide(challengeScreen); return true; }
   if (isOpen(shopScreen)) { hide(shopScreen); return true; }
   if (isOpen(doneScreen)) { hide(doneScreen); return true; }
   if (breakOpen()) return true;

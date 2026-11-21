@@ -31,6 +31,31 @@ app opens). Classic is a separate, stricter way to play:
 - Classic keeps its own best score; the Island best is never changed by Classic. The family's Island
   settings (difficulty, hearts) do not apply to Classic, but the break reminder and daily limit do.
 
+## Challenges and buddies
+
+The trophy button on the start screen opens three **challenges**. Each is a small Classic board with a fixed
+starting layout, so Retry always gives the same puzzle:
+
+| Challenge | Goal | Pals |
+|---|---|---|
+| First Rectangle | Close one loop | none |
+| Half the Board | Own half the board | 2 |
+| Full Board | Own every tile | 2 |
+
+A tick marks a finished challenge. Challenges are practice: they never pay coins, stars or records and do not
+count for the daily mission, but the break reminder and daily limit still apply.
+
+Three **buddies** (extra characters, original Loopfront designs) are earned rather than bought, and stay once
+earned:
+
+| Buddy | How to earn it |
+|---|---|
+| Owl | Draw a loop in Classic |
+| Dino | Own 25% in Classic |
+| Unicorn | Finish the Full Board challenge |
+
+Tapping a locked buddy shows how to earn it (with your progress where it applies).
+
 ## Install on a Fire tablet
 
 1. On the tablet, open this link in the Silk browser:
