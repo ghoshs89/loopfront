@@ -17,6 +17,20 @@ GitHub Actions workflow builds the APK for you.
 - Each day has one small **daily mission** on the start screen (for example "Draw 5 loops"). Finishing it pays 50 coins, and finishing on consecutive days builds a quiet "days in a row" counter. There are no reminders, notifications or countdowns, and missing a day just hides the counter.
 - Easy mode gives a bouncy island edge and a few seconds of protection at the start. Earn stars for owning more of the island, tagging pals, playing for two minutes and drawing loops.
 
+## Classic mode
+
+Choose **Classic** instead of **Island** on the start screen (Island is always the starting choice when the
+app opens). Classic is a separate, stricter way to play:
+
+- A square board of 56 x 56 tiles with straight walls. Touching a wall ends the round.
+- Movement is in four directions only, and turns happen exactly on the squares: press an arrow key or
+  W A S D, or swipe (a mouse drag works too). The latest turn you ask for is used at the next square;
+  turning straight back is ignored.
+- One life, no protection bubble, no power-ups. Pals move the same way.
+- You win by owning every single tile (100%); one tile short is not a win.
+- Classic keeps its own best score; the Island best is never changed by Classic. The family's Island
+  settings (difficulty, hearts) do not apply to Classic, but the break reminder and daily limit do.
+
 ## Install on a Fire tablet
 
 1. On the tablet, open this link in the Silk browser:

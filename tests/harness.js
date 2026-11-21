@@ -21,7 +21,8 @@ src = src.slice(0, tail) + `globalThis.__T = { entities, owner, counts, inArena,
   get hearts(){return hearts}, set hearts(v){hearts=v},
   pickups, get nextPickupAt(){return nextPickupAt}, get zoomUntil(){return zoomUntil}, get bubbleUntil(){return bubbleUntil},
   get freezeUntil(){return freezeUntil}, get roundPower(){return roundPower},
-  set roundLoops(v){roundLoops=v}, set roundPower(v){roundPower=v}, MISSIONS, dayKey, missionFor, usage, get arenaCells2(){return arenaCells}, setBoard, makeBoard, edgeDist, inPlay, randomPoint, get board(){return board} };\n` + src.slice(tail);
+  set roundLoops(v){roundLoops=v}, set roundPower(v){roundPower=v}, MISSIONS, dayKey, missionFor, usage, get arenaCells2(){return arenaCells}, setBoard, makeBoard, edgeDist, inPlay, randomPoint, get board(){return board},
+  TILE, DIRS, DIR_ANGLE, stampTileAt, queueTurn, get selectedMode(){return selectedMode}, get classic(){return !!diff.classic} };\n` + src.slice(tail);
 
 // ---- elements that start hidden in the HTML ----
 const seed = {};
@@ -128,6 +129,7 @@ function check(name, ok, extra) {
   if (!ok) failed++;
 }
 
+const angleNorm = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 function invariants(label) {
   const real = new Int32Array(T.counts.length);
   for (let i = 0; i < T.owner.length; i++) {
@@ -1790,6 +1792,203 @@ function bigLand() {
     }
   }
   check('easy: bouncing off the edge at any angle never costs a heart', lost === 0, `${lost}/${tries} ${detail.join(' ')}`);
+}
+
+
+// =====================================================================
+// 22. Classic mode
+// =====================================================================
+{
+  const tc = (i) => T.board.origin + (i + 0.5) * T.TILE;               // tile centre from a tile index
+  const tileOf = (v) => Math.floor((v - T.board.origin) / T.TILE);
+  const kp = (k, extra) => { const ev = Object.assign({ key: k, repeat: false, target: null, preventDefault() {} }, extra); fire('window:keydown', ev); fire('window:keyup', { key: k }); };
+  const clearPals = () => { for (const e of T.entities) if (!e.isPlayer && e.alive) T.kill(e, null, 'wall'); for (const e of T.entities) if (!e.isPlayer) e.respawnAt = 1e9; };
+  const classicStart = (parent) => {
+    freshGame(Object.assign({ difficulty: 'hard', breakMin: 0 }, parent || {}));
+    T.settings.seenClassic = true;
+    click('modeClassic');
+    click('playBtn');
+    return T.player;
+  };
+  // give an entity a fresh 3 x 3 home at a tile, standing on its centre
+  const rehome = (e, col, row, dir) => {
+    for (let i = 0; i < T.owner.length; i++) if (T.owner[i] === e.id) { T.owner[i] = 0; T.counts[e.id]--; }
+    e.bx0 = T.N; e.by0 = T.N; e.bx1 = -1; e.by1 = -1;
+    e.tx.length = 0; e.ty.length = 0; e.tl.length = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) T.stampTileAt(e, tc(col + dx), tc(row + dy), false);
+    e.x = e.px = tc(col); e.y = e.py = tc(row); e.dir = dir; e.angle = T.DIR_ANGLE[dir]; e.pend = -1; e.homeX = e.x; e.homeY = e.y;
+  };
+  const runUntil = (cond, maxFrames, ms) => { for (let f = 0; f < maxFrames && !cond(); f++) frames(1, ms); return cond(); };
+
+  // ---- the choice ----
+  freshGame({ difficulty: 'hard', breakMin: 0 });
+  check('Island is the starting choice', T.selectedMode === 'island' && hasClass('modeIsland', 'sel') && !hasClass('modeClassic', 'sel'));
+  click('modeClassic');
+  check('Classic can be chosen and shows its own best', T.selectedMode === 'classic' && hasClass('modeClassic', 'sel') && els.bestLabel.textContent === 'Classic best: 0.00%', els.bestLabel.textContent);
+  click('playBtn');
+  check('the first Classic round explains the rules first', !hasClass('classicHowScreen', 'hidden') && T.mode === 'menu');
+  click('classicOkBtn');
+  check('"Let\'s go!" starts Classic and remembers the explanation', T.mode === 'playing' && T.classic && T.settings.seenClassic === true && JSON.parse(localStorage._d['loopfront.settings']).seenClassic === true);
+  boot(localStorage._d);
+  check('every launch starts on Island again', T.selectedMode === 'island' && hasClass('modeIsland', 'sel'));
+
+  // ---- the board and the rules ----
+  let p = classicStart({ difficulty: 'easy' });
+  check('Classic uses a square board of 56 x 56 tiles, each exactly 6 x 6 cells', T.board.shape === 'square' && T.board.tile === 30 && T.arenaCells2 === 336 * 336 && T.arenaCells2 === 56 * 56 * 36, `${T.arenaCells2}`);
+  check('Classic ignores the family difficulty: one life, no protection, no bounce', T.hearts === 1 && hasClass('heartsPanel', 'hidden') && p.shieldUntil <= T.simTime + 1e-9 && T.diff.bounce === false);
+  check('the player starts on a tile centre with a 3 x 3 home', Math.abs(p.x - tc(tileOf(p.x))) < 1e-9 && Math.abs(p.y - tc(tileOf(p.y))) < 1e-9 && T.counts[p.id] === 9 * 36);
+  click('modeIsland');
+  check('changing the choice mid-round does not change the round', T.classic && T.board.shape === 'square');
+  click('modeClassic');
+  let cardinal = true, onLines = true, pickupsSeen = 0;
+  const onLine = (v) => Math.abs(((v - T.board.origin - 15) % 30 + 30) % 30) < 1e-6 || Math.abs(((v - T.board.origin - 15) % 30 + 30) % 30 - 30) < 1e-6;
+  p.speed = 0;                                                     // park the player; watch the pals
+  for (let f = 0; f < 60 * 40 && T.mode === 'playing'; f++) {
+    if (f % 300 === 0) poke();
+    frames(1);
+    pickupsSeen += T.pickups.length;
+    for (const e of T.entities) {
+      if (!e.alive || e.isPlayer) continue;
+      if (!T.DIR_ANGLE.some(a => Math.abs(angleNorm(e.angle - a)) < 1e-9)) cardinal = false;
+      if (!onLine(e.x) && !onLine(e.y)) onLines = false;
+    }
+  }
+  check('pals only ever move in the four directions, along tile lines', cardinal && onLines);
+  check('no power-ups in Classic', pickupsSeen === 0);
+  invariants('classic pals');
+
+  // ---- a crisp rectangle of known area, by keys at several frame rates, by WASD, swipes and mouse drags ----
+  // north 4 tiles, east 4, south 3, west back into the home: 27 tiles = 972 cells
+  const rectangle = (ms, press) => {
+    const pl = classicStart();
+    clearPals();
+    rehome(pl, 28, 28, 3);
+    const hx = pl.x, hy = pl.y;
+    const steps = [[() => pl.y < hy - 3 * 30, 'right'], [() => pl.x > hx + 3 * 30, 'down'], [() => pl.y > hy - 2 * 30, 'left']];
+    let hadTrail = false;
+    for (const [cond, d] of steps) { runUntil(() => { if (pl.tx.length) hadTrail = true; return cond() || T.mode !== 'playing'; }, 600, ms); press(d); }
+    runUntil(() => (hadTrail && pl.tx.length === 0) || T.mode !== 'playing', 600, ms);
+    return { cells: T.counts[pl.id], alive: T.mode === 'playing' };
+  };
+  const byKey = { right: 'ArrowRight', down: 'ArrowDown', left: 'ArrowLeft', up: 'ArrowUp' };
+  const byWasd = { right: 'd', down: 's', left: 'a', up: 'w' };
+  const swipeVec = { right: [60, 0], down: [0, 60], left: [-60, 0], up: [0, -60] };
+  const swipeTo = (d) => { fire('window:pointerdown', { clientX: 400, clientY: 300 }); fire('window:pointermove', { clientX: 400 + swipeVec[d][0], clientY: 300 + swipeVec[d][1] }); fire('window:pointerup', {}); };
+  for (const ms of [1000 / 60, 100 / 3, 100]) {
+    const r = rectangle(ms, (d) => kp(byKey[d]));
+    check(`arrow keys draw an exact rectangle (${ms.toFixed(1)} ms frames)`, r.alive && r.cells === 27 * 36, `${r.cells} cells (want 972)`);
+  }
+  let r = rectangle(1000 / 60, (d) => kp(byWasd[d]));
+  check('W A S D draw the same rectangle', r.alive && r.cells === 972, `${r.cells}`);
+  r = rectangle(1000 / 60, swipeTo);
+  check('swipes (and mouse drags) draw the same rectangle', r.alive && r.cells === 972, `${r.cells}`);
+
+  // ---- input rules ----
+  p = classicStart(); clearPals(); rehome(p, 28, 28, 3);
+  kp('ArrowDown');
+  check('straight back is ignored', p.pend === -1);
+  fire('window:keydown', { key: 'ArrowRight', repeat: true, target: null, preventDefault() {} });
+  check('a held key repeating does not queue a turn', p.pend === -1);
+  kp('ArrowRight'); kp('ArrowLeft');
+  check('the latest valid turn wins', p.pend === 2);
+  const y0 = p.y;
+  runUntil(() => p.dir !== 3, 120);
+  check('the turn happens exactly on the next tile centre', p.dir === 2 && Math.abs(p.y - tc(tileOf(y0) - 1)) < 1e-6 && Math.abs(p.x - tc(28)) < 4, `y=${(p.y - y0).toFixed(1)}`);
+  kp('ArrowUp');
+  click('pauseBtn');
+  check('pausing forgets a queued turn', p.pend === -1);
+  click('resumeBtn');
+  kp('ArrowDown');
+  fire('window:blur', {});
+  check('leaving the window forgets a queued turn', p.pend === -1);
+  fire('window:pointerdown', { clientX: 300, clientY: 300 });
+  fire('window:pointermove', { clientX: 310, clientY: 305 });
+  check('a tiny wobble is not a swipe', p.pend === -1);
+  fire('window:pointermove', { clientX: 300, clientY: 360 });
+  const firstSwipe = p.pend;
+  fire('window:pointermove', { clientX: 380, clientY: 360 });
+  check('one swipe gives one turn, along its stronger direction', firstSwipe === 1 && p.pend === 1, `first=${firstSwipe} now=${p.pend}`);
+  fire('window:pointerup', {});
+  fire('window:pointerdown', { clientX: 300, clientY: 300, target: { closest: () => ({}) } });
+  fire('window:pointermove', { clientX: 300, clientY: 200 });
+  check('touches on buttons never turn', p.pend === 1);
+
+  // ---- walls, trails and collisions ----
+  p = classicStart({ difficulty: 'easy' }); clearPals(); rehome(p, 28, 5, 3);
+  runUntil(() => T.mode !== 'playing', 600);
+  check('walls end a Classic round even when the family uses Easy', T.mode === 'over' && els.ovCause.textContent === 'You bumped into the wall.' && els.againBtn.textContent === 'RETRY', els.ovCause.textContent);
+  p = classicStart(); clearPals(); rehome(p, 28, 28, 3);
+  { const hy = p.y, hx = p.x;
+    runUntil(() => p.y < hy - 3 * 30, 600); kp('ArrowRight');
+    runUntil(() => p.x > hx + 30, 600); kp('ArrowDown');
+    runUntil(() => p.y > hy - 3.5 * 30, 600); kp('ArrowLeft');
+    runUntil(() => T.mode !== 'playing', 600); }
+  check('running over your own trail ends the round', T.mode === 'over' && els.ovCause.textContent === 'You ran over your own trail.', els.ovCause.textContent);
+
+  const duel = (botInOwn) => {
+    const pl = classicStart(); clearPals(); rehome(pl, 20, 28, 0);
+    const b = T.entities[5];
+    placeBot(b, 'Rival', tc(30), tc(28), Math.PI);
+    b.dir = 2; b.pend = -1; b.targetAngle = Math.PI;
+    if (botInOwn) for (let c = 24; c <= 30; c++) T.stampTileAt(b, tc(c), tc(28), false);
+    runUntil(() => T.mode !== 'playing', 600);
+    return { b, cause: els.ovCause.textContent, playerAlive: pl.alive };
+  };
+  let d1 = duel(false), d2 = duel(false);
+  check('two heads meeting outside their land: both are out, every time', !d1.playerAlive && !d1.b.alive && !d2.b.alive && d1.cause === 'You bumped into Rival.' && d2.cause === d1.cause, `${d1.cause} botAlive=${d1.b.alive}`);
+  d1 = duel(true);
+  check('a pal on its own land wins a head-on', !d1.playerAlive && d1.b.alive && d1.cause === 'You bumped into Rival.');
+
+  p = classicStart(); clearPals(); rehome(p, 28, 28, 3);
+  runUntil(() => p.y < p.homeY - 4 * 30, 600);
+  { const b = T.entities[5]; placeBot(b, 'Cutter', tc(31), tc(25), Math.PI); b.dir = 2; b.pend = -1; b.targetAngle = Math.PI; }
+  runUntil(() => T.mode !== 'playing', 300);
+  check('a pal crossing your trail ends the round', T.mode === 'over' && els.ovCause.textContent === 'Cutter crossed your trail.', els.ovCause.textContent);
+
+  // ---- winning needs every tile ----
+  const ownAllBut = (pl, freeTiles) => {
+    for (let row = 0; row < 56; row++) for (let col = 0; col < 56; col++) if (!freeTiles.some(([c, r2]) => c === col && r2 === row)) T.stampTileAt(pl, tc(col), tc(row), false);
+  };
+  p = classicStart(); clearPals();
+  ownAllBut(p, [[10, 0], [11, 0], [12, 0], [13, 0], [14, 0]]);
+  p.x = p.px = tc(9); p.y = p.py = tc(2); p.dir = 3; p.angle = T.DIR_ANGLE[3]; p.pend = -1; p.tx.length = 0; p.ty.length = 0; p.tl.length = 0;
+  runUntil(() => p.y < tc(1), 120); kp('ArrowRight');
+  runUntil(() => T.mode !== 'playing', 600);
+  check('owning every tile wins the board at exactly 100%', T.mode === 'over' && els.ovTitle.textContent === 'BOARD CHAMPION!' && els.ovPct.textContent === '100.00%' && els.ovCause.textContent === 'You own the whole board!', `${els.ovTitle.textContent} ${els.ovPct.textContent}`);
+  check('a Classic win is recorded as the Classic best only', T.progress.classicBest === 100 && T.progress.best < 100, `classic=${T.progress.classicBest} island=${T.progress.best}`);
+
+  p = classicStart(); clearPals();
+  ownAllBut(p, [[10, 0], [11, 0], [12, 0], [40, 40]]);
+  p.x = p.px = tc(9); p.y = p.py = tc(2); p.dir = 3; p.angle = T.DIR_ANGLE[3]; p.pend = -1; p.tx.length = 0; p.ty.length = 0; p.tl.length = 0;
+  runUntil(() => p.y < tc(1), 120); kp('ArrowRight');
+  runUntil(() => T.counts[p.id] >= T.arenaCells2 - 36 || T.mode !== 'playing', 600);
+  frames(5);
+  check('one tile short is not a win, even though it rounds to 99.97%', T.mode === 'playing' && T.counts[p.id] === T.arenaCells2 - 36 && (T.pctOf(p)).toFixed(2) === '99.97', `${T.pctOf(p).toFixed(2)}%`);
+  invariants('classic win');
+
+  // ---- records, retry, family limits, back to the island ----
+  boot(Object.assign({}, DEFAULT_STORE, { 'loopfront.progress': JSON.stringify({ best: 7.5, rounds: 3 }) }));
+  check('an older save loads with its Island best and a fresh Classic best', T.progress.best === 7.5 && T.progress.classicBest === 0);
+  T.settings.seenClassic = true;
+  click('modeClassic'); click('playBtn');
+  p = T.player; clearPals();
+  T.stampTileAt(p, tc(10), tc(10), false);
+  frames(2);
+  T.kill(p, null, 'wall');
+  check('a Classic round never changes the Island best', T.progress.best === 7.5 && T.progress.classicBest > 0);
+  click('againBtn');
+  check('Retry starts another Classic round', T.mode === 'playing' && T.classic);
+  T.parentCfg.dailyMin = 30; T.usage.sec = 5000;
+  T.kill(T.player, null, 'wall');
+  click('againBtn');
+  check('Retry respects the daily limit', !hasClass('doneScreen', 'hidden') && T.mode === 'over');
+  click('doneHomeBtn');
+  T.parentCfg.dailyMin = 0;
+  fire('menuBtn:click');
+  check('Home goes back to the island behind the menu', T.board.shape === 'circle' && T.arenaCells2 === 273428 && !T.classic);
+  click('modeIsland'); click('playBtn');
+  check('an Island round after Classic is the normal island', T.mode === 'playing' && !T.classic && T.board.shape === 'circle' && T.hearts === 1);
+  check('the Classic explanation exists and starts hidden', /<div id="classicHowScreen" class="overlay hidden">/.test(html));
 }
 
 
