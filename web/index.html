@@ -67,6 +67,7 @@
     position: absolute; left: 12px; bottom: 12px; width: 150px; height: 150px; border-radius: 50%;
     border: 4px solid var(--ink); background: #fff; box-shadow: var(--shadow);
   }
+  #minimap.square { border-radius: 18px; }
   #feed { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
   #feed .msg {
     padding: 6px 14px; border-radius: 999px; font-size: 15px; background: #fff; border: 3px solid var(--ink);
@@ -615,12 +616,83 @@ const mark = new Uint8Array(N * N);        // scratch for flood fill ("reachable
 const inArena = new Uint8Array(N * N);
 const counts = new Int32Array(SLOTS + 2);  // cells owned per id
 let arenaCells = 0;
-for (let y = 0; y < N; y++) {
-  for (let x = 0; x < N; x++) {
-    const dx = (x + 0.5) * CELL - CENTER, dy = (y + 0.5) * CELL - CENTER;
-    if (dx * dx + dy * dy <= PLAY_R * PLAY_R) { inArena[y * N + x] = 1; arenaCells++; }
+
+/* ---- board geometry: every "where is the edge?" question goes through here ----
+   circle: the island (radius = drawn edge). square: a board with straight walls (half = half of a side).
+   For both, playable land ends HEAD_R - 2 inside the drawn edge, exactly where a head is bounced or stopped,
+   so every playable cell can be painted by a legal trail (see PLAY_R). */
+let board = null;
+function makeBoard(shape, size) {
+  if (shape === 'square') {
+    const half = Math.min(size / 2, CENTER - 40);
+    return { shape: 'square', half, play: half - HEAD_R - 2 };
+  }
+  const r = size ? Math.min(size / 2, ARENA_R) : ARENA_R;
+  return { shape: 'circle', r, play: r - HEAD_R - 2 };
+}
+// distance from a point to the drawn edge, positive inside
+function edgeDist(x, y) {
+  const dx = x - CENTER, dy = y - CENTER;
+  return board.shape === 'square' ? board.half - Math.max(Math.abs(dx), Math.abs(dy)) : board.r - Math.hypot(dx, dy);
+}
+const edgeSize = () => (board.shape === 'square' ? board.half : board.r);
+function inPlay(x, y) {
+  const dx = x - CENTER, dy = y - CENTER;
+  return board.shape === 'square'
+    ? Math.abs(dx) <= board.play && Math.abs(dy) <= board.play
+    : dx * dx + dy * dy <= board.play * board.play;
+}
+// a random point at least `margin` inside the drawn edge (uniform over the area)
+function randomPoint(margin) {
+  const lim = Math.max(0, edgeSize() - margin);
+  if (board.shape === 'square') return { x: CENTER + rand(-lim, lim), y: CENTER + rand(-lim, lim) };
+  const a = Math.random() * TAU, r = Math.sqrt(Math.random()) * lim;
+  return { x: CENTER + Math.cos(a) * r, y: CENTER + Math.sin(a) * r };
+}
+// outward wall normal at a point near the edge, and the point pulled back onto playable land
+function wallNormal(x, y) {
+  const dx = x - CENTER, dy = y - CENTER;
+  if (board.shape === 'square') {
+    if (Math.abs(dx) >= Math.abs(dy)) return { nx: Math.sign(dx) || 1, ny: 0 };
+    return { nx: 0, ny: Math.sign(dy) || 1 };
+  }
+  const d = Math.hypot(dx, dy) || 1;
+  return { nx: dx / d, ny: dy / d };
+}
+function clampToPlay(e) {
+  if (board.shape === 'square') {
+    e.x = clamp(e.x, CENTER - board.play, CENTER + board.play);
+    e.y = clamp(e.y, CENTER - board.play, CENTER + board.play);
+    return;
+  }
+  const dx = e.x - CENTER, dy = e.y - CENTER, d = Math.hypot(dx, dy) || 1;
+  if (d > board.play) { e.x = CENTER + dx / d * board.play; e.y = CENTER + dy / d * board.play; }
+}
+// the board outline as a canvas path (inset grows it outward), drawn at scale k
+function boardPath(c, inset, k) {
+  c.beginPath();
+  if (board.shape === 'square') {
+    const h = board.half + inset;
+    c.rect((CENTER - h) * k, (CENTER - h) * k, 2 * h * k, 2 * h * k);
+  } else {
+    c.arc(CENTER * k, CENTER * k, (board.r + inset) * k, 0, TAU);
   }
 }
+// switch board; the ownership mask and the percentage denominator follow it
+function setBoard(b) {
+  if (board && board.shape === b.shape && board.r === b.r && board.half === b.half) return;
+  board = b;
+  arenaCells = 0;
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const v = inPlay((x + 0.5) * CELL, (y + 0.5) * CELL) ? 1 : 0;
+      inArena[y * N + x] = v;
+      arenaCells += v;
+    }
+  }
+  toggleClass(mm, 'square', b.shape === 'square');      // the minimap card follows the board's shape
+}
+setBoard(makeBoard('circle'));
 
 // Territory is drawn into a 1px-per-cell offscreen canvas, then scaled up (smoothed) each frame.
 const terr = document.createElement('canvas');
@@ -851,8 +923,7 @@ function capture(e) {
 function findSpawn() {
   for (let attempt = 0; attempt < 240; attempt++) {
     const relax = attempt / 240;
-    const a = Math.random() * TAU, r = Math.sqrt(Math.random()) * (ARENA_R - 240);
-    const x = CENTER + Math.cos(a) * r, y = CENTER + Math.sin(a) * r;
+    const { x, y } = randomPoint(Math.min(240, edgeSize() * 0.6));
     const minHead = 460 * (1 - relax);
     let ok = true;
     for (const o of entities) {
@@ -1530,8 +1601,7 @@ function nearestOwn(e) {
 }
 
 function dangerAt(e, x, y) {
-  const dx = x - CENTER, dy = y - CENTER, lim = ARENA_R - 40;
-  if (dx * dx + dy * dy > lim * lim) return true;
+  if (edgeDist(x, y) < 40) return true;
   // Easy: pals steer around the child's trail instead of wandering across it by accident
   if (diff.gentle && player && player.alive && e !== player && player.tx.length &&
       x > player.tminx - 30 && x < player.tmaxx + 30 && y > player.tminy - 30 && y < player.tmaxy + 30) {
@@ -1597,8 +1667,7 @@ function makePlan(e) {
     let score = Math.random() * 0.8 - Math.abs(angDiff(e.angle, a)) * 0.25;
     for (let j = 0; j < 3; j++) {
       const d = 120 + j * 130, x = e.x + c * d, y = e.y + s * d;
-      const dx = x - CENTER, dy = y - CENTER, lim = ARENA_R - 90;
-      if (dx * dx + dy * dy > lim * lim) { score -= 6 - j * 1.5; continue; }
+      if (edgeDist(x, y) < 90) { score -= 6 - j * 1.5; continue; }
       const o = owner[clamp((y / CELL) | 0, 0, N - 1) * N + clamp((x / CELL) | 0, 0, N - 1)];
       score += o === 0 ? 2 : o !== id ? 1.3 : 0.2;
     }
@@ -1615,9 +1684,9 @@ function makePlan(e) {
   let sign = Math.random() < 0.5 ? 1 : -1;
   // keep the far corner of the loop inside the arena
   const la = bestA + sign * Math.PI / 2;
-  const fx = e.x + Math.cos(bestA) * leg1 + Math.cos(la) * leg2 - CENTER;
-  const fy = e.y + Math.sin(bestA) * leg1 + Math.sin(la) * leg2 - CENTER;
-  if (fx * fx + fy * fy > (ARENA_R - 110) * (ARENA_R - 110)) sign = -sign;
+  const fx = e.x + Math.cos(bestA) * leg1 + Math.cos(la) * leg2;
+  const fy = e.y + Math.sin(bestA) * leg1 + Math.sin(la) * leg2;
+  if (edgeDist(fx, fy) < 110) sign = -sign;
   return { dir: bestA, leg1, leg2, sign };
 }
 
@@ -1714,17 +1783,17 @@ function steerPlayer(e, h) {
 }
 
 // Easy mode: the island edge is bouncy for the player instead of a game-ender.
-function bounceOffWall(e, dx, dy) {
-  const d = Math.hypot(dx, dy) || 1;
-  const nx = dx / d, ny = dy / d;
-  const vx = Math.cos(e.angle), vy = Math.sin(e.angle);
+function bounceOffWall(e) {
+  const { nx, ny } = wallNormal(e.x, e.y);
+  const inA = e.angle, vx = Math.cos(inA), vy = Math.sin(inA);
   const dot = vx * nx + vy * ny;
-  e.angle = Math.atan2(vy - 2 * dot * ny, vx - 2 * dot * nx);
-  // nudge the bounce a little toward the island centre so a head-on hit never retraces the trail
-  const dev = angDiff(e.angle, Math.atan2(-ny, -nx));
-  e.angle += (Math.abs(dev) < 0.02 ? (Math.random() < 0.5 ? 1 : -1) : Math.sign(dev)) * 0.35;
-  const r = ARENA_R - HEAD_R - 2;
-  e.x = CENTER + nx * r; e.y = CENTER + ny * r;
+  let out = Math.atan2(vy - 2 * dot * ny, vx - 2 * dot * nx);          // a mirror bounce
+  // ...but never straight back along the trail just drawn: hits close to head-on would otherwise retrace it
+  // and cost a heart. Keep at least 0.5 rad (about 30 degrees) away from the way the player came in.
+  const back = inA + Math.PI, d = angDiff(back, out);
+  if (Math.abs(d) < 0.5) out = back + (Math.abs(d) < 0.02 ? (Math.random() < 0.5 ? 1 : -1) : Math.sign(d)) * 0.5;
+  e.angle = out;
+  clampToPlay(e);
   const cx = clamp((e.x / CELL) | 0, 0, N - 1), cy = clamp((e.y / CELL) | 0, 0, N - 1);
   e.inOwn = owner[cy * N + cx] === e.id;
   if (simTime - e.bumpAt > 0.6) {
@@ -1736,8 +1805,7 @@ function bounceOffWall(e, dx, dy) {
 
 function spawnPickup() {
   for (let t = 0; t < 20; t++) {
-    const a = Math.random() * TAU, r = Math.sqrt(Math.random()) * (ARENA_R - 160);
-    const x = CENTER + Math.cos(a) * r, y = CENTER + Math.sin(a) * r;
+    const { x, y } = randomPoint(Math.min(160, edgeSize() * 0.5));
     if (t < 12 && player && player.alive && Math.hypot(x - player.x, y - player.y) > 1100) continue;   // prefer nearby
     let ok = true;
     for (const o of entities) if (o.alive && Math.hypot(o.x - x, o.y - y) < 250) { ok = false; break; }
@@ -1813,9 +1881,8 @@ function stepCore(h) {
   // arena boundary
   for (const e of entities) {
     if (!e.alive) continue;
-    const dx = e.x - CENTER, dy = e.y - CENTER;
-    if (dx * dx + dy * dy > WALL_R2) {
-      if (e.isPlayer && diff.bounce) bounceOffWall(e, dx, dy);
+    if (edgeDist(e.x, e.y) < HEAD_R - 2) {              // same line as the old WALL_R2 test on the island
+      if (e.isPlayer && diff.bounce) bounceOffWall(e);
       else doom(e, null, 'wall');
     }
   }
@@ -2059,15 +2126,13 @@ function render(now) {
   const vy0 = cam.y - vh / 2 / s, vy1 = cam.y + vh / 2 / s;
 
   // foam ring and sandy island floor
-  ctx.beginPath();
-  ctx.arc(CENTER, CENTER, ARENA_R + 12, 0, TAU);
+  boardPath(ctx, 12, 1);
   ctx.lineWidth = 26;
   ctx.globalAlpha = 0.35;
   ctx.strokeStyle = th.foam;
   ctx.stroke();
   ctx.globalAlpha = 1;
-  ctx.beginPath();
-  ctx.arc(CENTER, CENTER, ARENA_R, 0, TAU);
+  boardPath(ctx, 0, 1);
   ctx.fillStyle = th.floor;
   ctx.fill();
 
@@ -2081,26 +2146,25 @@ function render(now) {
     ctx.globalAlpha = 1;
   }
 
-  // subtle grid, clipped to the arena by chord length
-  const GRID = 50, R2 = ARENA_R * ARENA_R;
+  // subtle grid, clipped to the board
+  const GRID = 50, E = edgeSize();
+  ctx.save();
+  boardPath(ctx, 0, 1);
+  ctx.clip();
   ctx.beginPath();
-  for (let gx = Math.ceil(Math.max(vx0, CENTER - ARENA_R) / GRID) * GRID; gx <= Math.min(vx1, CENTER + ARENA_R); gx += GRID) {
-    const half = Math.sqrt(Math.max(0, R2 - (gx - CENTER) * (gx - CENTER)));
-    const a = Math.max(vy0, CENTER - half), b = Math.min(vy1, CENTER + half);
-    if (b > a) { ctx.moveTo(gx, a); ctx.lineTo(gx, b); }
+  for (let gx = Math.ceil(Math.max(vx0, CENTER - E) / GRID) * GRID; gx <= Math.min(vx1, CENTER + E); gx += GRID) {
+    ctx.moveTo(gx, Math.max(vy0, CENTER - E)); ctx.lineTo(gx, Math.min(vy1, CENTER + E));
   }
-  for (let gy = Math.ceil(Math.max(vy0, CENTER - ARENA_R) / GRID) * GRID; gy <= Math.min(vy1, CENTER + ARENA_R); gy += GRID) {
-    const half = Math.sqrt(Math.max(0, R2 - (gy - CENTER) * (gy - CENTER)));
-    const a = Math.max(vx0, CENTER - half), b = Math.min(vx1, CENTER + half);
-    if (b > a) { ctx.moveTo(a, gy); ctx.lineTo(b, gy); }
+  for (let gy = Math.ceil(Math.max(vy0, CENTER - E) / GRID) * GRID; gy <= Math.min(vy1, CENTER + E); gy += GRID) {
+    ctx.moveTo(Math.max(vx0, CENTER - E), gy); ctx.lineTo(Math.min(vx1, CENTER + E), gy);
   }
   ctx.lineWidth = 1 / s;
   ctx.strokeStyle = th.grid;
   ctx.stroke();
+  ctx.restore();
 
   // white foam edge of the island
-  ctx.beginPath();
-  ctx.arc(CENTER, CENTER, ARENA_R + 3, 0, TAU);
+  boardPath(ctx, 3, 1);
   ctx.lineWidth = 8;
   ctx.strokeStyle = th.foam;
   ctx.stroke();
@@ -2259,8 +2323,7 @@ function drawMinimap() {
   m.setTransform(1, 0, 0, 1, 0, 0);
   m.clearRect(0, 0, S, S);
   m.save();
-  m.beginPath();
-  m.arc(S / 2, S / 2, ARENA_R * k, 0, TAU);
+  boardPath(m, 0, k);
   m.fillStyle = (THEMES[settings.theme] || THEMES.sand).floor;
   m.fill();
   m.clip();
@@ -2285,8 +2348,7 @@ function drawMinimap() {
   m.lineWidth = Math.max(1, dpr);
   m.strokeRect((cam.x - vw / 2 / s) * k, (cam.y - vh / 2 / s) * k, vw / s * k, vh / s * k);
   m.restore();
-  m.beginPath();
-  m.arc(S / 2, S / 2, ARENA_R * k - 0.5 * dpr, 0, TAU);
+  boardPath(m, -0.5 * dpr / k, k);
   m.lineWidth = 2 * dpr;
   m.strokeStyle = INK;
   m.stroke();

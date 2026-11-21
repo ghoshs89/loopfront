@@ -21,7 +21,7 @@ src = src.slice(0, tail) + `globalThis.__T = { entities, owner, counts, inArena,
   get hearts(){return hearts}, set hearts(v){hearts=v},
   pickups, get nextPickupAt(){return nextPickupAt}, get zoomUntil(){return zoomUntil}, get bubbleUntil(){return bubbleUntil},
   get freezeUntil(){return freezeUntil}, get roundPower(){return roundPower},
-  set roundLoops(v){roundLoops=v}, set roundPower(v){roundPower=v}, MISSIONS, dayKey, missionFor, usage, get arenaCells2(){return arenaCells} };\n` + src.slice(tail);
+  set roundLoops(v){roundLoops=v}, set roundPower(v){roundPower=v}, MISSIONS, dayKey, missionFor, usage, get arenaCells2(){return arenaCells}, setBoard, makeBoard, edgeDist, inPlay, randomPoint, get board(){return board} };\n` + src.slice(tail);
 
 // ---- elements that start hidden in the HTML ----
 const seed = {};
@@ -1680,6 +1680,116 @@ function bigLand() {
   check('a pal due to respawn on a full island waits instead of taking land', r.sleeper.alive === false && T.counts[r.sleeper.id] === 0, `alive=${r.sleeper.alive}`);
   check('the percentage, the record and the results agree', Math.abs(parseFloat(txt('ovPct')) - T.pctOf(r.pl)) < 0.006 && T.progress.best >= 99.9, `${txt('ovPct')} vs ${T.pctOf(r.pl).toFixed(3)}`);
   invariants('island win');
+}
+
+
+// =====================================================================
+// 21. Board geometry: one place decides the shape (island circle, square boards)
+// =====================================================================
+{
+  const countMask = () => { let n = 0; for (let i = 0; i < T.inArena.length; i++) n += T.inArena[i]; return n; };
+  freshGame({ difficulty: 'hard', breakMin: 0 });
+  check('the island is a circle with 273,428 playable cells', T.board.shape === 'circle' && T.arenaCells2 === 273428 && countMask() === 273428, `${T.board.shape} ${T.arenaCells2}`);
+
+  T.setBoard(T.makeBoard('square', 1000));
+  let expect = 0;
+  for (let y = 0; y < T.N; y++) for (let x = 0; x < T.N; x++) {
+    const dx = (x + 0.5) * T.CELL - T.CENTER, dy = (y + 0.5) * T.CELL - T.CENTER;
+    if (Math.abs(dx) <= 487 && Math.abs(dy) <= 487) expect++;
+  }
+  check('a square board masks exactly the cells inside its walls', T.board.shape === 'square' && T.board.half === 500 && T.arenaCells2 === expect && countMask() === expect, `${T.arenaCells2} vs ${expect}`);
+  check('square corners are playable, beyond the walls is not', T.inPlay(T.CENTER + 480, T.CENTER - 480) && !T.inPlay(T.CENTER + 495, T.CENTER) && !T.inPlay(T.CENTER + 520, T.CENTER + 520));
+  check('distance to the edge is measured to the nearest straight wall', Math.abs(T.edgeDist(T.CENTER + 450, T.CENTER + 100) - 50) < 1e-9 && Math.abs(T.edgeDist(T.CENTER, T.CENTER) - 500) < 1e-9);
+  let bad = 0;
+  for (let i = 0; i < 2000; i++) { const pt = T.randomPoint(160); if (T.edgeDist(pt.x, pt.y) < 160 - 1e-9) bad++; }
+  check('random spawn and pick-up spots keep their margin on a square board', bad === 0, `${bad} too close`);
+
+  // walls on a square board: deadly on hard, bouncy on easy, corners included
+  click('againBtn');                                            // a round on the square board
+  let p = T.player;
+  check('a round can start on a square board', T.mode === 'playing' && p.alive && T.inPlay(p.x, p.y));
+  for (const e of T.entities) if (!e.isPlayer && e.alive) T.kill(e, null, 'wall');
+  for (const e of T.entities) if (!e.isPlayer) e.respawnAt = 1e9;
+  p.x = p.px = T.CENTER + 420; p.y = p.py = T.CENTER; p.angle = 0;
+  frames(40);
+  check('hard: the straight wall ends the round', T.mode === 'over' && els.ovCause.textContent === 'You bumped the edge of the island.', els.ovCause.textContent);
+
+  T.parentCfg.difficulty = 'easy';
+  click('againBtn');
+  p = T.player;
+  for (const e of T.entities) if (!e.isPlayer && e.alive) T.kill(e, null, 'wall');
+  for (const e of T.entities) if (!e.isPlayer) e.respawnAt = 1e9;
+  p.x = p.px = T.CENTER + 420; p.y = p.py = T.CENTER + 30; p.angle = 0.2;
+  let maxOut = -1e9;
+  for (let k = 0; k < 60; k++) { frames(1); maxOut = Math.max(maxOut, Math.max(Math.abs(p.x - T.CENTER), Math.abs(p.y - T.CENTER))); }
+  check('easy: a straight wall bounces the player back', T.mode === 'playing' && Math.cos(p.angle) < 0 && maxOut < 500, `cos=${Math.cos(p.angle).toFixed(2)} max=${maxOut.toFixed(0)}`);
+  p.x = p.px = T.CENTER + 440; p.y = p.py = T.CENTER + 440; p.angle = Math.PI / 4;
+  for (let k = 0; k < 60; k++) frames(1);
+  check('easy: a corner bounces the player back inside', T.mode === 'playing' && T.edgeDist(p.x, p.y) > 0 && Math.max(Math.abs(p.x - T.CENTER), Math.abs(p.y - T.CENTER)) < 490, `at ${(p.x - T.CENTER).toFixed(0)},${(p.y - T.CENTER).toFixed(0)}`);
+
+  // pals live on a square board without running into the walls, and everything is drawn as a square
+  T.setBoard(T.makeBoard('square', 1800));
+  T.parentCfg.difficulty = 'normal';
+  click('againBtn');
+  let outside = 0;
+  ctxLog.recording = true;
+  for (let f = 0; f < 60 * 40 && T.mode === 'playing'; f++) {
+    if (f % 300 === 0) poke();
+    frames(1);
+    for (const e of T.entities) if (e.alive && T.edgeDist(e.x, e.y) < 0) outside++;
+    for (const pu of T.pickups) if (T.edgeDist(pu.x, pu.y) < 0) outside++;
+  }
+  ctxLog.recording = false;
+  check('on a square board nothing ever ends up outside the walls', outside === 0, `${outside}`);
+  invariants('square board');
+
+  // a normal start on a smaller island, then one ordinary loop
+  T.setBoard(T.makeBoard('circle', 800));
+  T.parentCfg.difficulty = 'easy';
+  click('againBtn');
+  p = T.player;
+  for (const e of T.entities) if (!e.isPlayer && e.alive) T.kill(e, null, 'wall');
+  for (const e of T.entities) if (!e.isPlayer) e.respawnAt = 1e9;
+  check('a smaller island starts normally', T.board.r === 400 && T.mode === 'playing' && T.edgeDist(p.x, p.y) > 200 && T.counts[p.id] > 0);
+  const c0 = T.counts[p.id], hx = p.homeX, hy = p.homeY;
+  p.x = p.px = hx; p.y = p.py = hy; p.angle = 0;               // face the first corner, so the loop never crosses itself
+  const route = [[hx + 150, hy], [hx + 150, hy + 150], [hx, hy + 150], [hx, hy + 20]];
+  let wp = 0;
+  for (let f = 0; f < 60 * 10 && wp < route.length && T.mode === 'playing'; f++) {
+    const [wx, wy] = route[wp];
+    if (Math.hypot(p.x - wx, p.y - wy) < 20) { wp++; continue; }
+    fire('window:pointermove', { clientX: 640 + (wx - T.cam.x) * T.cam.scale, clientY: 400 + (wy - T.cam.y) * T.cam.scale });
+    frames(1);
+  }
+  frames(20);
+  check('an ordinary loop on the smaller island claims land', T.counts[p.id] > c0 * 2 && T.mode === 'playing' && T.hearts === 3, `cells ${c0} -> ${T.counts[p.id]} wp ${wp}`);
+  invariants('small island');
+  T.setBoard(T.makeBoard('circle'));
+  check('switching back restores the full island', T.arenaCells2 === 273428 && T.board.r === T.ARENA_R);
+}
+
+
+// ---- Easy bounce never sends the player back along its own trail (island and square, many angles) ----
+{
+  let lost = 0, tries = 0;
+  const detail = [];
+  for (const shape of ['circle', 'square']) {
+    for (const inc of [0, 0.05, 0.1, 0.2, 0.3, -0.15, -0.25, 0.6]) {
+      freshGame({ difficulty: 'easy', breakMin: 0 });
+      if (shape === 'square') T.setBoard(T.makeBoard('square', 1000));
+      click('againBtn');
+      const p = T.player;
+      for (const e of T.entities) if (!e.isPlayer && e.alive) T.kill(e, null, 'wall');
+      for (const e of T.entities) if (!e.isPlayer) e.respawnAt = 1e9;
+      const reach = shape === 'square' ? 420 : 1400;
+      p.x = p.px = T.CENTER + reach; p.y = p.py = T.CENTER + 20; p.angle = inc;     // heading at the right-hand edge
+      p.shieldUntil = 0;
+      for (let k = 0; k < 90; k++) frames(1);
+      tries++;
+      if (T.hearts < 3 || T.mode !== 'playing') { lost++; detail.push(shape + '@' + inc); }
+    }
+  }
+  check('easy: bouncing off the edge at any angle never costs a heart', lost === 0, `${lost}/${tries} ${detail.join(' ')}`);
 }
 
 
