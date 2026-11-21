@@ -21,7 +21,7 @@ src = src.slice(0, tail) + `globalThis.__T = { entities, owner, counts, inArena,
   get hearts(){return hearts}, set hearts(v){hearts=v},
   pickups, get nextPickupAt(){return nextPickupAt}, get zoomUntil(){return zoomUntil}, get bubbleUntil(){return bubbleUntil},
   get freezeUntil(){return freezeUntil}, get roundPower(){return roundPower},
-  set roundLoops(v){roundLoops=v}, set roundPower(v){roundPower=v}, MISSIONS, dayKey, missionFor, usage };\n` + src.slice(tail);
+  set roundLoops(v){roundLoops=v}, set roundPower(v){roundPower=v}, MISSIONS, dayKey, missionFor, usage, get arenaCells2(){return arenaCells} };\n` + src.slice(tail);
 
 // ---- elements that start hidden in the HTML ----
 const seed = {};
@@ -1599,6 +1599,87 @@ function bigLand() {
   click('parentCloseBtn');
   check('the grown-ups card scrolls on short screens', /#parentCard\s*\{[^}]*max-height:\s*90vh[^}]*overflow-y:\s*auto/.test(html));
   check('the done screen exists and starts hidden', /<div id="doneScreen" class="overlay hidden">/.test(html));
+}
+
+
+// =====================================================================
+// 20. The whole-island win is reachable through play
+// =====================================================================
+{
+  const DEG = Math.PI / 180;
+  const txt = (id) => (els[id] ? els[id].textContent : '');      // results not built yet reads as empty
+  const pol = (r, deg) => ({ x: T.CENTER + Math.cos(deg * DEG) * r, y: T.CENTER + Math.sin(deg * DEG) * r });
+  // free a patch of land touching the island edge, east side, |angle| <= 4 degrees, radius >= 1360
+  const carvePatch = () => {
+    let n = 0;
+    for (let y = 0; y < T.N; y++) for (let x = 0; x < T.N; x++) {
+      const i = y * T.N + x;
+      if (!T.inArena[i] || !T.owner[i]) continue;
+      const dx = (x + 0.5) * T.CELL - T.CENTER, dy = (y + 0.5) * T.CELL - T.CENTER;
+      if (Math.hypot(dx, dy) >= 1360 && Math.abs(Math.atan2(dy, dx)) <= 4 * DEG) { T.counts[T.owner[i]]--; T.owner[i] = 0; n++; }
+    }
+    return n;
+  };
+  const ownAllButPatch = (difficulty) => {
+    freshGame({ difficulty, breakMin: 0 });
+    const p = soloStart();
+    T.stampDisc(p, T.CENTER, T.CENTER, 1500, false);
+    const freed = carvePatch();
+    return { p, freed };
+  };
+  const place = (ent, pt, angle) => { ent.x = ent.px = pt.x; ent.y = ent.py = pt.y; ent.angle = angle; };
+
+  // 1. owning everything a trail could ever paint must count as owning the island
+  freshGame({ difficulty: 'hard', breakMin: 0 });
+  let p = soloStart();
+  T.stampDisc(p, T.CENTER, T.CENTER, (T.ARENA_R - 11 + 2) + 6.5, false);     // the furthest a legal trail reaches
+  frames(2);
+  check('owning every cell a trail can reach wins the island', T.mode === 'over' && txt('ovTitle') === 'ISLAND CHAMPION!' && parseFloat(txt('ovPct')) >= 99.9, `${txt('ovTitle')} ${txt('ovPct')}`);
+
+  // 2. finish a nearly complete island by ordinary pointer steering
+  let r0;
+  ({ p } = ownAllButPatch('easy'));
+  const rounds0 = T.progress.rounds, coins0 = T.progress.coins;
+  check('the fixture leaves a real gap at the edge (below the win line)', T.counts[p.id] < T.arenaCells2 * 0.999, `${(T.pctOf(p)).toFixed(2)}%`);
+  place(p, pol(1330, -9), -9 * DEG + Math.PI / 2);
+  const route = [pol(1440, -6), pol(1468, -5)];
+  for (let d = -4; d <= 5; d += 1) route.push(pol(1468, d));
+  route.push(pol(1420, 7), pol(1330, 9));
+  let wp = 0, f = 0;
+  for (; f < 60 * 20 && T.mode === 'playing' && wp < route.length; f++) {
+    const w = route[wp];
+    if (Math.hypot(p.x - w.x, p.y - w.y) < 24) { wp++; continue; }
+    fire('window:pointermove', { clientX: 640 + (w.x - T.cam.x) * T.cam.scale, clientY: 400 + (w.y - T.cam.y) * T.cam.scale });
+    frames(1);
+  }
+  for (let k = 0; k < 30 && T.mode === 'playing'; k++) frames(1);
+  check('steering one last loop along the edge wins the island', T.mode === 'over' && txt('ovTitle') === 'ISLAND CHAMPION!', `mode=${T.mode} land=${T.pctOf(p).toFixed(2)}% waypoint ${wp}/${route.length} hearts=${T.hearts}`);
+  check('the win is counted once, with one coin payout', T.progress.rounds === rounds0 + 1 && T.progress.coins > coins0 && txt('ovCoinsText') === '+' + (T.progress.coins - coins0) + ' coins', `rounds +${T.progress.rounds - rounds0}`);
+  const roundsAfter = T.progress.rounds;
+  frames(60);
+  check('a won round is never finished twice', T.progress.rounds === roundsAfter);
+
+  // 3. the final tick: a pal crossing the trail beats the closing capture; a waiting pal never takes land
+  const closingTick = (withCutter) => {
+    const fx = ownAllButPatch('hard');
+    const pl = fx.p;
+    for (let d = -4.6; d <= 4.6; d += 0.2) T.addTrailPoint(pl, pol(1468, d).x, pol(1468, d).y);
+    place(pl, pol(1468, 5.2), 5.2 * DEG + Math.PI / 2);               // next step lands back on own land
+    const sleeper = T.entities[7];
+    sleeper.alive = false; sleeper.respawnAt = T.simTime + 0.001;      // due to come back on this very step (0 would mean never)
+    if (withCutter) placeBot(T.entities[5], 'Cutter', pol(1468, 0).x + 2, pol(1468, 0).y, Math.PI);
+    const before = { rounds: T.progress.rounds, coins: T.progress.coins };
+    T.step(1 / 60);
+    return { pl, sleeper, before };
+  };
+  let r = closingTick(true);
+  check('final tick: a pal on the trail ends the round before the loop closes', T.mode === 'over' && txt('ovCause') === 'Cutter crossed your trail.' && txt('ovTitle') === 'Oops!', `${txt('ovTitle')} / ${txt('ovCause')}`);
+  check('final tick: the round is counted once', T.progress.rounds === r.before.rounds + 1);
+  r = closingTick(false);
+  check('final tick without a pal: closing the loop wins', T.mode === 'over' && txt('ovTitle') === 'ISLAND CHAMPION!', txt('ovTitle'));
+  check('a pal due to respawn on a full island waits instead of taking land', r.sleeper.alive === false && T.counts[r.sleeper.id] === 0, `alive=${r.sleeper.alive}`);
+  check('the percentage, the record and the results agree', Math.abs(parseFloat(txt('ovPct')) - T.pctOf(r.pl)) < 0.006 && T.progress.best >= 99.9, `${txt('ovPct')} vs ${T.pctOf(r.pl).toFixed(3)}`);
+  invariants('island win');
 }
 
 

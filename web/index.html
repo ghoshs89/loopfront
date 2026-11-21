@@ -483,6 +483,10 @@ const HOME_R = 58;                  // starting territory radius
 const BOT_COUNT = 10;
 const SLOTS = BOT_COUNT + 1;
 const WALL_R2 = (ARENA_R - HEAD_R + 2) * (ARENA_R - HEAD_R + 2);
+// Playable land: cells a legal trail can always reach and claim. A head is turned back (Easy) or stopped
+// (Normal/Hard) near the edge, and a trail only paints 6.5 px around its line, so the outermost ring of the
+// drawn island could never be owned by anyone. Counting it made the whole-island win impossible.
+const PLAY_R = ARENA_R - HEAD_R - 2;
 const HEADON_R2 = (HEAD_R * 1.6) * (HEAD_R * 1.6);
 const IDLE_MS = 20000;              // menus stop animating after this long without input
 const INK = '#2b2d42';
@@ -614,7 +618,7 @@ let arenaCells = 0;
 for (let y = 0; y < N; y++) {
   for (let x = 0; x < N; x++) {
     const dx = (x + 0.5) * CELL - CENTER, dy = (y + 0.5) * CELL - CENTER;
-    if (dx * dx + dy * dy <= ARENA_R * ARENA_R) { inArena[y * N + x] = 1; arenaCells++; }
+    if (dx * dx + dy * dy <= PLAY_R * PLAY_R) { inArena[y * N + x] = 1; arenaCells++; }
   }
 }
 
@@ -855,20 +859,26 @@ function findSpawn() {
       if (o.alive && Math.hypot(o.x - x, o.y - y) < minHead) { ok = false; break; }
     }
     if (!ok) continue;
-    if (attempt < 200) {
-      // the home disc (plus a margin) must be free land
-      const pr = HOME_R + 50 * (1 - relax);
-      for (let k = 0; k < 13 && ok; k++) {
-        const pa = (k / 12) * TAU, rr = k === 12 ? 0 : pr;
-        const cx = clamp(((x + Math.cos(pa) * rr) / CELL) | 0, 0, N - 1);
-        const cy = clamp(((y + Math.sin(pa) * rr) / CELL) | 0, 0, N - 1);
-        if (owner[cy * N + cx] !== 0) ok = false;
-      }
-      if (!ok) continue;
-    }
+    // the whole home disc (plus a shrinking margin) must be free land: a newcomer never takes anyone's land,
+    // so a nearly finished island stays finishable (when there is no room the pal simply waits)
+    if (!discFree(x, y, HOME_R + 50 * (1 - relax))) continue;
     return { x, y };
   }
   return null;
+}
+
+function discFree(wx, wy, r) {
+  const r2 = r * r;
+  const cx0 = Math.max(0, Math.floor((wx - r) / CELL)), cx1 = Math.min(N - 1, Math.floor((wx + r) / CELL));
+  const cy0 = Math.max(0, Math.floor((wy - r) / CELL)), cy1 = Math.min(N - 1, Math.floor((wy + r) / CELL));
+  for (let y = cy0; y <= cy1; y++) {
+    const dy = (y + 0.5) * CELL - wy;
+    for (let x = cx0; x <= cx1; x++) {
+      const dx = (x + 0.5) * CELL - wx;
+      if (dx * dx + dy * dy <= r2 && owner[y * N + x] !== 0) return false;
+    }
+  }
+  return true;
 }
 
 function newAI() {
