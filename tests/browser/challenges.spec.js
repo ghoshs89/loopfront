@@ -6,14 +6,6 @@ for (const [w, h] of [[360, 640], [1280, 800]]) {
     const errors = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await page.setViewportSize({ width: w, height: h });
-    await seen(page);
-    await page.addInitScript(() => {
-      try {
-        const s = JSON.parse(localStorage.getItem('loopfront.settings') || '{}');
-        s.seenClassic = true;
-        localStorage.setItem('loopfront.settings', JSON.stringify(s));
-      } catch (e) { /* ignore */ }
-    });
     await open(page);
     await page.locator('#challengesBtn').click();
     await expect(page.locator('#challengeScreen')).toBeVisible();
@@ -27,6 +19,10 @@ for (const [w, h] of [[360, 640], [1280, 800]]) {
     for (const r of m.rows) { expect(r.x).toBeGreaterThanOrEqual(0); expect(r.x + r.w).toBeLessThanOrEqual(m.vw + 0.5); }
     await testInfo.attach(`challenges-${w}x${h}`, { body: await page.screenshot(), contentType: 'image/png' });
     await page.locator('#challengeList .chrow button').first().click();
+    await expect(page.locator('#challengeScreen')).toBeHidden();
+    await page.evaluate(() => window.onLoopfrontBack());
+    await page.getByRole('button', { name: 'Play First Rectangle' }).click();
+    await page.locator('#classicOkBtn').click();
     await expect(page.locator('#hud')).toBeVisible();
     await expect(page.locator('#goalPill')).toHaveText('Goal: close one loop');
     await page.locator('#pauseBtn').click();

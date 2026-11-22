@@ -2056,7 +2056,7 @@ function tilesSafe(e, d, n) {
 // the player's next quarter turn: the latest valid input wins; straight back is ignored
 function queueTurn(d) {
   const p = player;
-  if (!p || !p.alive || !diff.classic || mode !== 'playing') return;
+  if (!p || !p.alive || !diff.classic || mode !== 'playing' || paused || appPaused || pageHidden) return;
   if ((d + 2) % 4 === p.dir) return;
   p.pend = d;
 }
@@ -2935,7 +2935,11 @@ function requestStart(keepKind) {
   if (limitReached()) { showDone(); return; }       // between rounds only, and before the break reminder
   if (parentCfg.breakMin > 0 && playedSec >= parentCfg.breakMin * 60) { showBreak(); return; }
   if (nextKind.mode !== 'island') {
-    if (!settings.seenClassic) { show(classicHowScreen); return; }
+    if (!settings.seenClassic) {
+      hide(challengeScreen);
+      show(classicHowScreen);
+      return;
+    }
   } else if (!settings.seenHowTo) { openHow(true); return; }
   startGame();
 }
@@ -3118,7 +3122,7 @@ function closeBreak() {
   clearInterval(breakTimer); breakTimer = 0;
   hide(breakScreen);
   playedSec = 0;
-  requestStart();
+  requestStart(true);
 }
 
 /* ---- grown-ups gate ---- */
@@ -3506,7 +3510,11 @@ window.onLoopfrontBack = () => {
   if (isOpen(parentScreen)) { closeParent(); return true; }
   if (isOpen(howScreen)) { closeHow(); return true; }
   if (isOpen(starsScreen)) { hide(starsScreen); return true; }
-  if (isOpen(classicHowScreen)) { hide(classicHowScreen); return true; }
+  if (isOpen(classicHowScreen)) {
+    hide(classicHowScreen);
+    if (nextKind.mode === 'challenge') openChallenges();
+    return true;
+  }
   if (isOpen(challengeScreen)) { hide(challengeScreen); return true; }
   if (isOpen(shopScreen)) { hide(shopScreen); return true; }
   if (isOpen(doneScreen)) { hide(doneScreen); return true; }

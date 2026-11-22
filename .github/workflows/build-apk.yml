@@ -157,10 +157,17 @@ jobs:
         run: |
           skip=false
           if [ "$EVENT" = "workflow_dispatch" ]; then
-            latest=$(gh api "repos/$REPO/releases/latest" --jq .target_commitish 2>/dev/null || true)
-            if [ "$latest" = "$GITHUB_SHA" ]; then
+            latest=$(gh api "repos/$REPO/releases/latest")
+            if jq -e --arg sha "$GITHUB_SHA" --arg windows "$WITH_WINDOWS" '
+              .target_commitish == $sha and
+              (.tag_name | test("^v[0-9]+$")) and
+              (.tag_name[1:] as $n | [.assets[].name] as $names |
+                ($names | index("loopfront.apk")) != null and
+                ($names | index("SHA256SUMS.txt")) != null and
+                ($windows != "true" or ($names | index("loopfront-windows-x64-v0.1." + $n + ".zip")) != null))
+            ' <<< "$latest" >/dev/null; then
               skip=true
-              echo "Nothing new to release: $GITHUB_SHA already has a release."
+              echo "The requested platform downloads already exist for $GITHUB_SHA."
             fi
           fi
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
@@ -278,12 +285,22 @@ jobs:
           for f in *; do cmp "$f" "$RUNNER_TEMP/check/$f" || { echo "::error::Staged asset $f differs"; exit 1; }; done
           [ "$(ls "$RUNNER_TEMP/check" | wc -l)" = "$(ls | wc -l)" ] || { echo "::error::Staged release has unexpected assets"; exit 1; }
 
+          draft_target=$(gh release view "$TAG" -R "$REPO" --json targetCommitish --jq .targetCommitish)
+          [ "$draft_target" = "$GITHUB_SHA" ] || { echo "::error::Unexpected release target $draft_target"; exit 1; }
+          # A new draft can have no tag yet. Resolve an existing lightweight or annotated tag.
+          resolve_tag() {
+            refs=$(git -C "$GITHUB_WORKSPACE" ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}") || return 1
+            awk '/\^\{\}$/ { peeled=$1 } !/\^\{\}$/ { direct=$1 } END { print (peeled ? peeled : direct) }' <<< "$refs"
+          }
+          tagsha=$(resolve_tag)
+          [ -z "$tagsha" ] || [ "$tagsha" = "$GITHUB_SHA" ] || { echo "::error::Existing tag points at $tagsha"; exit 1; }
+
           if [ "$(gh release view "$TAG" -R "$REPO" --json isDraft --jq .isDraft)" = "true" ]; then
             gh release edit "$TAG" -R "$REPO" --draft=false --latest
           fi
 
           # After publishing: the tag points at this commit and the stable APK link serves these exact bytes.
-          tagsha=$(git -C "$GITHUB_WORKSPACE" ls-remote origin "refs/tags/$TAG" | cut -f1)
+          tagsha=$(resolve_tag)
           [ "$tagsha" = "$GITHUB_SHA" ] || { echo "::error::Tag $TAG points at $tagsha, not $GITHUB_SHA"; exit 1; }
           curl -fsSL "https://github.com/$REPO/releases/latest/download/loopfront.apk" -o "$RUNNER_TEMP/latest.apk"
           cmp loopfront.apk "$RUNNER_TEMP/latest.apk" || { echo "::error::The stable APK link does not serve this release"; exit 1; }

@@ -1899,7 +1899,10 @@ function bigLand() {
   kp('ArrowUp');
   click('pauseBtn');
   check('pausing forgets a queued turn', p.pend === -1);
+  kp('ArrowUp');
   click('resumeBtn');
+  frames(20);
+  check('keys pressed during pause leave the resumed heading alone', p.pend === -1 && p.dir === 2);
   kp('ArrowDown');
   fire('window:blur', {});
   check('leaving the window forgets a queued turn', p.pend === -1);
@@ -2015,6 +2018,13 @@ function bigLand() {
         [...rows].map(r => r.children[1].children[0].textContent).join('|') === 'First Rectangle|Half the Board|Full Board');
   check('each challenge goal is five words or fewer', T.CHALLENGES.every(c => c.text.split(/\s+/).length <= 5));
   click('challengeCloseBtn');
+
+  T.parentCfg.breakMin = 15; T.playedSec = 901;
+  playChallenge(1);
+  check('a break interrupts the selected challenge', !hasClass('breakScreen', 'hidden'));
+  fakeNow += 121000; T.breakTick(); click('breakOkBtn');
+  check('finishing the break starts the selected challenge', T.mode === 'playing' && T.diff.challenge?.id === T.CHALLENGES[1].id);
+  click('pauseBtn'); click('quitBtn');
 
   // ---- First Rectangle: fail, retry the same layout, then succeed ----
   const before = snapshot();
