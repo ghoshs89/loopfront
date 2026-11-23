@@ -23,7 +23,7 @@ src = src.slice(0, tail) + `globalThis.__T = { entities, owner, counts, inArena,
   get freezeUntil(){return freezeUntil}, get roundPower(){return roundPower},
   set roundLoops(v){roundLoops=v}, set roundPower(v){roundPower=v}, MISSIONS, dayKey, missionFor, usage, get arenaCells2(){return arenaCells}, setBoard, makeBoard, edgeDist, inPlay, randomPoint, get board(){return board},
   TILE, DIRS, DIR_ANGLE, stampTileAt, queueTurn, get selectedMode(){return selectedMode}, get classic(){return !!diff.classic},
-  CHALLENGES, AVATARS, get nextKind(){return nextKind} };\n` + src.slice(tail);
+  CHALLENGES, AVATARS, get nextKind(){return nextKind}, requestStart };\n` + src.slice(tail);
 
 // ---- elements that start hidden in the HTML ----
 const seed = {};
@@ -2140,6 +2140,58 @@ function bigLand() {
   check('the challenge list exists and starts hidden', /<div id="challengeScreen" class="overlay hidden">/.test(html));
 }
 
+// =====================================================================
+// 24. Every start says which round it means
+// =====================================================================
+{
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const calls = [...script.matchAll(/requestStart\(([^)]*)\)/g)].map(m => m[1].trim()).filter(a => a !== 'kind');
+  check('every requestStart call passes a round kind', calls.length > 0 && calls.every(a => a === 'nextKind' || a === 'menuKind(' || /^\{ mode: /.test(a)), calls.join(' | '));
+  check('no button hands its click event to requestStart', !/addEventListener\([^)]*,\s*requestStart\)/.test(script));
+
+  const playChallenge = (i) => { click('challengesBtn'); fire(els.challengeList.children[i].children[2].id + ':click'); };
+  const quit = () => { click('pauseBtn'); click('quitBtn'); };
+
+  freshGame({ difficulty: 'hard', breakMin: 0 });
+  T.settings.seenClassic = true;
+  playChallenge(0); quit();
+  click('playBtn');
+  check('Play on the start screen after a challenge starts the chosen mode', T.mode === 'playing' && T.nextKind.mode === 'island' && !T.diff.challenge && !T.classic);
+  quit();
+  click('modeClassic'); click('playBtn');
+  check('Play with Classic chosen starts Classic', T.mode === 'playing' && T.nextKind.mode === 'classic' && T.classic && !T.diff.challenge);
+  T.kill(T.player, null, 'wall');
+  els.overScreen.classList.remove('hidden');
+  fire('window:keydown', { key: 'Enter', repeat: false, target: null, preventDefault() {} });
+  check('Enter on the result screen retries the same kind', T.mode === 'playing' && T.classic && !T.diff.challenge);
+  quit(); click('modeIsland');
+
+  // a first-time challenge goes through the Classic how-to and still starts that challenge
+  T.settings.seenClassic = false;
+  playChallenge(2);
+  check('a first challenge shows the Classic how-to first', !hasClass('classicHowScreen', 'hidden') && hasClass('challengeScreen', 'hidden') && T.mode === 'menu');
+  check('Back from that how-to returns to the challenge list', globalThis.onLoopfrontBack() === true && !hasClass('challengeScreen', 'hidden'));
+  click('challengeCloseBtn');
+  playChallenge(2);
+  click('classicOkBtn');
+  check('OK on the how-to starts the chosen challenge', T.mode === 'playing' && T.diff.challenge?.id === 'full');
+  quit();
+
+  // the grown-up extension continues the interrupted kind
+  T.parentCfg.dailyMin = 30; T.usage.sec = 5000;
+  playChallenge(1);
+  check('the daily limit interrupts a challenge start', !hasClass('doneScreen', 'hidden') && T.mode === 'menu');
+  click('doneMoreBtn'); typeAnswer(readQuestion());
+  check('15 more minutes starts that same challenge', T.mode === 'playing' && T.diff.challenge?.id === 'half');
+  quit();
+  T.parentCfg.dailyMin = 0;
+
+  // a click event or a made-up kind never changes what is queued
+  const before = JSON.stringify(T.nextKind);
+  T.requestStart({ type: 'click' }); quit();
+  T.requestStart({ mode: 'challenge', id: 'nope' }); quit();
+  check('an unknown kind keeps the queued round', JSON.stringify(T.nextKind) === before, JSON.stringify(T.nextKind));
+}
 
 // ---- J and E: static structure ----
 check('page-level network block is present', /http-equiv="Content-Security-Policy"[^>]*connect-src 'none'/.test(html));

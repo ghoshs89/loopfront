@@ -1259,7 +1259,14 @@ function loadStore() {
 }
 
 let selectedMode = 'island';     // the start-screen choice; every launch begins on Island
-let nextKind = { mode: 'island', id: null };   // what Play / Retry will start
+// The round that Play / Retry / a challenge button asked for. Only requestStart(kind) sets it, so screens
+// that sit between the tap and the round (tutorials, break, daily limit) continue the same kind.
+let nextKind = { mode: 'island', id: null };
+function menuKind() { return { mode: selectedMode, id: null }; }
+function isKind(k) {
+  return !!k && (k.mode === 'island' || k.mode === 'classic' ||
+    (k.mode === 'challenge' && CHALLENGES.some(c => c.id === k.id)));
+}
 function startMatch(withPlayer, modeName, challengeId) {
   // the rules are a snapshot taken here, so nothing on a menu can change a round in progress
   const ch = withPlayer && modeName === 'challenge' ? CHALLENGES.find(c => c.id === challengeId) || null : null;
@@ -1584,7 +1591,7 @@ function openChallenges() {
     play.type = 'button';
     play.textContent = 'Play';
     play.setAttribute('aria-label', 'Play ' + ch.name);
-    play.addEventListener('click', () => { nextKind = { mode: 'challenge', id: ch.id }; requestStart(true); });
+    play.addEventListener('click', () => requestStart({ mode: 'challenge', id: ch.id }));
     row.appendChild(mark); row.appendChild(text); row.appendChild(play);
     list.appendChild(row);
   }
@@ -2927,11 +2934,12 @@ function grantMore() {
   usage.extraSec = over + 900;
   flushUsage();
   hide(doneScreen);
-  requestStart(true);
+  continueStart();
 }
-function requestStart(keepKind) {
-  // from the start screen PLAY means the chosen mode; Retry and challenge buttons keep what they set
-  if (keepKind !== true && mode === 'menu') nextKind = { mode: selectedMode, id: null };
+// kind: { mode: 'island' | 'classic' | 'challenge', id }. Callers always say which round they mean:
+// menuKind() for the start screen's Play, nextKind for Retry and for screens that interrupted a start.
+function requestStart(kind) {
+  if (isKind(kind)) nextKind = { mode: kind.mode, id: kind.mode === 'challenge' ? kind.id : null };
   if (limitReached()) { showDone(); return; }       // between rounds only, and before the break reminder
   if (parentCfg.breakMin > 0 && playedSec >= parentCfg.breakMin * 60) { showBreak(); return; }
   if (nextKind.mode !== 'island') {
@@ -2943,6 +2951,9 @@ function requestStart(keepKind) {
   } else if (!settings.seenHowTo) { openHow(true); return; }
   startGame();
 }
+function continueStart() { requestStart(nextKind); }   // after a break, tutorial or grown-up extension
+function playFromMenu() { requestStart(menuKind()); }
+function retryRound() { requestStart(nextKind); }
 
 function showMenu() {
   clearTimeout(overTimer);
@@ -3122,7 +3133,7 @@ function closeBreak() {
   clearInterval(breakTimer); breakTimer = 0;
   hide(breakScreen);
   playedSec = 0;
-  requestStart(true);
+  continueStart();
 }
 
 /* ---- grown-ups gate ---- */
@@ -3324,8 +3335,8 @@ function refreshChars() {
 /* =====================================================================
    Events
    ===================================================================== */
-$('playBtn').addEventListener('click', requestStart);
-$('againBtn').addEventListener('click', requestStart);
+$('playBtn').addEventListener('click', playFromMenu);
+$('againBtn').addEventListener('click', retryRound);
 function setMode(m) {
   selectedMode = m;
   toggleClass($('modeIsland'), 'sel', m === 'island');
@@ -3340,7 +3351,7 @@ $('modeClassic').addEventListener('click', () => setMode('classic'));
 $('classicOkBtn').addEventListener('click', () => {
   settings.seenClassic = true; saveSettings();
   hide(classicHowScreen);
-  requestStart(true);
+  continueStart();
 });
 $('menuBtn').addEventListener('click', () => {
   const toList = nextKind.mode === 'challenge';
@@ -3355,7 +3366,7 @@ $('howOkBtn').addEventListener('click', () => {
   const go = howThenStart;
   settings.seenHowTo = true; saveSettings();
   closeHow();
-  if (go) requestStart();
+  if (go) continueStart();
 });
 $('starsBtn').addEventListener('click', openStars);
 $('shopBtn').addEventListener('click', openShop);
@@ -3416,7 +3427,7 @@ window.addEventListener('keydown', ev => {
   }
   if (ev.target === nickInput) {
     // the name field keeps Enter-to-play, but only while the start screen is unobstructed
-    if (key === 'enter' && !ev.repeat && isOpen(startScreen) && noOverlayOpen()) { ev.preventDefault(); requestStart(); }
+    if (key === 'enter' && !ev.repeat && isOpen(startScreen) && noOverlayOpen()) { ev.preventDefault(); playFromMenu(); }
     return;
   }
   if (isEditable(ev.target)) return;
@@ -3426,8 +3437,8 @@ window.addEventListener('keydown', ev => {
   // Enter / Space start a game only from a non-interactive target; on a focused button they keep their
   // native meaning (activate that button) and must not also start a round.
   if ((key === 'enter' || key === ' ') && !ev.repeat && !isInteractive(ev.target) && noOverlayOpen()) {
-    if (mode === 'menu') { ev.preventDefault(); requestStart(); }
-    else if (mode === 'over' && isOpen(overScreen)) { ev.preventDefault(); requestStart(); }
+    if (mode === 'menu') { ev.preventDefault(); playFromMenu(); }
+    else if (mode === 'over' && isOpen(overScreen)) { ev.preventDefault(); retryRound(); }
   }
 });
 window.addEventListener('keyup', ev => {
